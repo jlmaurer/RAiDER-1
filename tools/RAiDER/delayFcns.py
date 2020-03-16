@@ -66,6 +66,7 @@ def get_delays(stepSize, pnts_file, wm_file, interpType = '3D', verbose = False)
     from RAiDER.delayFcns import _transform 
     from pyproj import Transformer, CRS 
     from tqdm import tqdm
+    import xarray as xr
 
     # Transformer from ECEF to weather model
     p1 = CRS.from_epsg(4978) 
@@ -76,53 +77,39 @@ def get_delays(stepSize, pnts_file, wm_file, interpType = '3D', verbose = False)
     ifWet = getIntFcn2(wm_file,interpType =interpType)
     ifHydro = getIntFcn2(wm_file,itype = 'hydro', interpType = interpType)
 
+    import pdb; pdb.set_trace()
     delays = []
-    with h5py.File(pnts_file, 'r') as f:
-        Nrays = f['Rays_len'].attrs['NumRays']
-        chunkSize = f['lon'].chunks[0]
-        in_shape = f['lon'].attrs['Shape']
+    #with h5py.File(pnts_file, 'r') as f:
+    #    Nrays = f['Rays_len'].attrs['NumRays']
+    #    chunkSize = f['lon'].chunks[0]
+    #    in_shape = f['lon'].attrs['Shape']
 
-    fac = 10
-    chunkSize = chunkSize//fac
-    Nchunks = Nrays//chunkSize + 1
+    #fac = 10
+    #chunkSize = chunkSize//fac
+    #Nchunks = Nrays//chunkSize + 1
 
-    #TODO: Would like to parallelize this; but on the other hand it might be best to leave as is
-    # and parallelize the higher-up level
-    with h5py.File(pnts_file, 'r') as f:
-        for k in tqdm(range(Nchunks)):
+    ##TODO: Would like to parallelize this; but on the other hand it might be best to leave as is
+    ## and parallelize the higher-up level
+    #with h5py.File(pnts_file, 'r') as f:
+    with xr.open_dataset(pnts_file, chunks={'x': 100, 'y': 100}) as f:
+            ray = f['Rays']
+        #for k in tqdm(range(Nchunks)):
         #for index in tqdm(range(Nrays)):
-            index = np.arange(k*chunkSize, min((k+1)*chunkSize, Nrays))
-            
-            ray, Npts = _ray_helper(f['Rays_len'][index], 
-                                    f['Rays_SP'][index,:], 
-                                    f['Rays_SLV'][index,:], stepSize)
-            #if f['Rays_len'][index] > 1:
-            #    ray = _compute_ray2(f['Rays_len'][index], 
-            #                            f['Rays_SP'][index,:], 
-            #                            f['Rays_SLV'][index,:], stepSize)
-            ray_x, ray_y, ray_z = t.transform(ray[...,0], ray[...,1], ray[...,2])
+#            index = np.arange(k*chunkSize, min((k+1)*chunkSize, Nrays))
+#            ray, Npts = _ray_helper(f['Rays_len'][index], 
+#                                    f['Rays_SP'][index,:], 
+#                                    f['Rays_SLV'][index,:], stepSize)
+#            ray_x, ray_y, ray_z = t.transform(ray[...,0], ray[...,1], ray[...,2])
+            ray_x, ray_y, ray_z = t.transform(ray[0,...], ray[1,...], ray[2,...])
             delay_wet   = interpolate2(ifWet, ray_x, ray_y, ray_z)
             delay_hydro = interpolate2(ifHydro, ray_x, ray_y, ray_z)
-            delays.append(_integrateLOS(stepSize, delay_wet, delay_hydro, Npts))
-            # import pdb; pdb.set_trace()
-            #else:
-            #    delays.append(np.array(np.nan, np.nan))
 
-#    wet_delay, hydro_delay = [], []
-#    for d in delays:
-#        wet_delay.append(d[0,...])
-#        hydro_delay.append(d[1,...])
+    import pdb; pdb.set_trace()
+#            delays.append(_integrateLOS(stepSize, delay_wet, delay_hydro, Npts))
 
     wet_delay = np.concatenate([d[0,...] for d in delays]).reshape(in_shape)
     hydro_delay = np.concatenate([d[1,...] for d in delays]).reshape(in_shape)
 
-    # Restore shape
-#    try:
-#        hydro, wet = np.stack((hydro_delay, wet_delay)).reshape((2,) + real_shape)
-#    except:
-#        pass
-
-#    return wet, hydro
     return wet_delay, hydro_delay
 
 
@@ -257,27 +244,27 @@ def sortSP(arr):
     return xSorted
 
 
-def lla2ecef(pnts_file):
+def lla2ecef(lon, lat, hgt):
     '''
     reproject a set of lat/lon/hgts to a new coordinate system
     '''
     from pyproj import Transformer
 
     t = Transformer.from_crs(4326,4978) # converts from WGS84 geodetic to WGS84 geocentric
-    with h5py.File(pnts_file, 'r+') as f:
-        f['Rays_SP'][:,:] = np.array(t.transform(f['lon'].value, f['lat'].value, f['hgt'].value)).T
+    out = np.moveaxis(np.array(t.transform(lon, lat, hgt)), 0,-1)
+    return out
 
 
-def getUnitLVs(pnts_file):
+def getUnitLVs(los):
     '''
     Get a set of look vectors normalized by their lengths
     '''
-    get_lengths(pnts_file)
-    with h5py.File(pnts_file, 'r+') as f:
-        f['Rays_SLV'][:,:] = f['LOS'].value / f['Rays_len'].value[:,np.newaxis]
+    lengths, max_len = get_lengths(los)
+    ulvs = los / lengths[...,np.newaxis]
+    return ulvs, lengths, max_len
 
 
-def get_lengths(pnts_file):
+def get_lengths(los):
     '''
     Returns the lengths of a vector or set of vectors, fast. 
     Inputs: 
@@ -288,15 +275,13 @@ def get_lengths(pnts_file):
        lengths     - an Nx1 numpy array containing the absolute distance in 
                      meters of the top of the atmosphere from the ground pnt. 
     '''
-    with h5py.File(pnts_file, 'r+') as f:
-        lengths = np.linalg.norm(f['LOS'].value, axis=-1)
-        try:
-            lengths[~np.isfinite(lengths)] = 0
-        except TypeError:
-            if ~np.isfinite(lengths):
-                lengths = 0
-        f['Rays_len'][:] = lengths
-        f['Rays_len'].attrs['MaxLen'] = np.nanmax(lengths)
+    lengths = np.linalg.norm(los, axis=-1)
+    try:
+        lengths[~np.isfinite(lengths)] = 0
+    except TypeError:
+        if ~np.isfinite(lengths):
+            lengths = 0
+    return lengths, np.nanmax(lengths)
 
 
 
