@@ -3,6 +3,8 @@ import os
 import sys
 import requests
 import argparse
+import itertools
+import pandas as pd
 
 
 UNR_URL = "http://geodesy.unr.edu/"
@@ -16,7 +18,7 @@ def download_UNR(statID, year, check = True, writeDir = '.', baseURL = UNR_URL, 
         statID   - 4-character station identifier
         year     - 4-numeral year
     '''
-    URL = "{baseURL}gps_timeseries/trop/{statID}/{statID}.{year}.trop.zip".format(baseURL, statID.lower(), year)
+    URL = "{0}gps_timeseries/trop/{1}/{1}.{2}.trop.zip".format(baseURL, statID.lower(), year)
     if check:
         flag = check_url(URL, verbose=verbose)
     else:
@@ -37,7 +39,7 @@ def getStatsByllh(llhBox = None, baseURL = UNR_URL):
     if llhBox is None:
         llhBox = [-90, 90, 0, 360]
 
-    stationHoldings = '{baseURL}NGLStationPages/DataHoldings.txt'.format(baseURL)
+    stationHoldings = '{}NGLStationPages/DataHoldings.txt'.format(baseURL)
     data = urlopen(stationHoldings) # it's a file like object and works just like a file
     stations = []
     for ind, line in enumerate(data): # files are iterable
@@ -110,14 +112,18 @@ def getStationList(bbox = None, writeLoc = None):
         bbox    - length-4 list of floats that describes a bounding box. Format is 
                   S N W E
     '''
+    if writeLoc is None:
+        writeLoc = os.path.join(os.getcwd(), 'gnssStationList.csv')
+
     if bbox is not None:
         statList = getStatsByllh(bbox)
     else:
         statList = getStatsByllh()
-    stations = list(statList.keys())
 
-    if writeLoc is not None:
-        writeStationList(stations, writeLoc)
+    statList.to_csv(writeLoc, index=False)
+
+    import pdb; pdb.set_trace()
+    stations = list(statList['ID'].values)
 
     return stations
 
@@ -167,6 +173,8 @@ def downloadTropoDelays(stats, years, check = True, writeDir = '.', verbose = Fa
     results = []
     stat_year_tup = itertools.product(stats, years)
     for s, y in stat_year_tup:
+        if verbose:
+            print('Currently checking station {} in {}'.format(s, y))
         flag = download_UNR(s, y, check = check, writeDir = writeDir, verbose = verbose)
         results.append({'ID': s, 'year': y, 'flag': flag})
     return pd.DataFrame(results).set_index('ID')
@@ -248,7 +256,7 @@ def parseCMD():
     # Handle different station requests 
     if args.station_file:
         stats = readStatNames(args.station_file)
-    elif args.bbox:
+    elif args.bounding_box:
         bbox = [float(d) for d in args.bbox]
         bbox[2] +=360
         bbox[3] +=360
@@ -260,6 +268,6 @@ def parseCMD():
     for yr in args.years:
         statDF = downloadTropoDelays(stats, yr, check = args.check, verbose = args.verbose)
         statDF.to_csv(os.path.join(args.out, 'stationList.csv'))
-    if verbose:
+    if args.verbose:
         print('Completed processing')
 

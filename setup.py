@@ -59,5 +59,5 @@ setup (name = 'RAiDER',
        scripts=['tools/bin/raiderDelay.py', 
                 'tools/bin/raiderStats.py', 
                 'tools/bin/prepAria.py', 
-                'tools/bin/downloadTropo.py'])
+                'tools/bin/raiderTropo.py'])
 
