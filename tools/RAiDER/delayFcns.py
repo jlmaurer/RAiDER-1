@@ -92,11 +92,13 @@ def get_delays(stepSize, pnts_file, wm_file, interpType='3D',
     '''
     Create the integration points for each ray path.
     '''
+    import xarray as xr
 
     t0 = time.time()
 
     # Get the weather model data
-    with h5py.File(wm_file, 'r') as f:
+#    with h5py.File(wm_file, 'r') as f:
+    with xr.open_dataset(wm_file) as ds:
         xs_wm = f['x'][()].copy()
         ys_wm = f['y'][()].copy()
         zs_wm = f['z'][()].copy()
@@ -106,7 +108,7 @@ def get_delays(stepSize, pnts_file, wm_file, interpType='3D',
     ifWet = Interpolator((ys_wm, xs_wm, zs_wm), wet, fill_value=np.nan)
     ifHydro = Interpolator((ys_wm, xs_wm, zs_wm), hydro, fill_value=np.nan)
 
-    with h5py.File(pnts_file, 'r') as f:
+    with xr.open_dataset(pnts_file) as ds:
         Nrays = f.attrs['NumRays']
         chunkSize = f.attrs['ChunkSize']
         in_shape = f['lon'].attrs['Shape']

@@ -117,12 +117,12 @@ class WeatherModel(ABC):
         '''
         pass
 
-    @abstractmethod
-    def checkWeatherExtents(*args, **kwargs)
-        '''
-        Placeholder method. Should be implemented in each weather model type class
-        '''
-        pass
+#    @abstractmethod
+#    def checkWeatherExtents(*args, **kwargs):
+#        '''
+#        Placeholder method. Should be implemented in each weather model type class
+#        '''
+#        pass
 
     @abstractmethod
     def _fetch(self, lats, lons, time, out):
@@ -161,6 +161,7 @@ class WeatherModel(ABC):
         if time > datetime.datetime.utcnow() - self._lag_time:
             raise RuntimeError("Weather model {} is not available at {}".format(self.Model(), time))
 
+
     def load(self, *args, outLats=None, outLons=None, los=None, _zlevels=None, zref=None, **kwargs):
         '''
         Calls the load_weather method. Each model class should define a load_weather
@@ -168,7 +169,7 @@ class WeatherModel(ABC):
         '''
         if zref is not None:
             self._zmax = zref
-        self._checkWeatherExtents(*args, **kwargs)
+#        self._checkWeatherExtents(*args, **kwargs)
         self.load_weather(*args, **kwargs)
         self._find_e()
         self._checkNotMaskedArrays()
@@ -191,18 +192,23 @@ class WeatherModel(ABC):
             raise RuntimeError('WeatherModel.plot: No plotType named {}'.format(plotType))
         return plot
 
-    def filename(self, outLoc = 'weather_files'):
+    def filename(self, time = None, outLoc = 'weather_files'):
         ''' Create a filename to store the weather model '''
-        with contextlib.suppress(FileExistsError):
-            os.mkdir(outLoc)
+        os.makedirs(outLoc, exist_ok = True)
         file_fmt = self._getFileType()
+
+        if time is None:
+            if self._time is None:
+                raise ValueError('Time must be specified before the file can be written')
+            else:
+                time = self._time
 
         download_flag = True
         f = os.path.join(
             outLoc,
             '{}_{}.{}'.format(
                 self.Model(),
-                datetime.strftime(self._time, '%Y_%m_%d_T%H_%M_%S'),
+                datetime.datetime.strftime(time, '%Y_%m_%d_T%H_%M_%S'),
                 file_fmt
             )
         )
@@ -611,8 +617,8 @@ class WeatherModel(ABC):
 
         if os.path.exists(weather_model_file) and not force_write:
             logger.warning(
-                'Weather model already exists, please remove it ("{}")  or pass "force_write = True"'.format(outName) 
-                'if you want to create a new one.'
+                'Weather model already exists, please remove it ("{}")  or pass "force_write = True"'
+                'if you want to create a new one.'.format(outName)
             )
             return None
 
