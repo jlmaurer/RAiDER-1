@@ -103,22 +103,22 @@ def computeDelay(weather_model_file_name, pnts_file_name, useWeatherNodes=False,
 
 
 def tropo_delay(
-    los,
-    lats,
-    lons,
-    ll_bounds,
-    heights,
-    flag,
-    weather_model,
-    wmLoc,
-    zref,
-    outformat,
-    time,
-    out,
-    download_only,
-    wetFilename,
-    hydroFilename
-):
+        los,
+        lats,
+        lons,
+        ll_bounds,
+        heights,
+        flag,
+        weather_model,
+        wmLoc,
+        zref,
+        outformat,
+        time,
+        out,
+        download_only,
+        wetFilename,
+        hydroFilename
+    ):
     """
     raiderDelay main function.
     """
@@ -139,8 +139,15 @@ def tropo_delay(
         wmLoc = os.path.join(out, 'weather_files')
         
     lats, lons = prepareWeatherModel(
-        weather_model, wmLoc, lats=lats, lons=lons, los=los, zref=zref,
-        time=time, download_only=download_only, makePlots=True
+        weather_model, 
+        wmLoc, 
+        lats=lats, 
+        lons=lons, 
+        los=los, 
+        zref=zref,
+        time=time, 
+        download_only=download_only, 
+        makePlots=True
     )
     
     if download_only:
