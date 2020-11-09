@@ -18,35 +18,6 @@ from RAiDER.logger import *
 from RAiDER.utilFcns import getTimeFromFile
 
 
-def getWMFilename(weather_model_name, time, outLoc):
-    '''
-    Check whether the output weather model exists, and
-    if not, download it.
-    '''
-    with contextlib.suppress(FileExistsError):
-        os.mkdir('weather_files')
-
-    download_flag = True
-    f = os.path.join(
-        outLoc,
-        '{}_{}.nc'.format(
-            weather_model_name,
-            datetime.strftime(time, '%Y_%m_%d_T%H_%M_%S')
-        )
-    )
-
-    if weather_model_name is 'GMAO' or weather_model_name is 'MERRA2':
-        f = f[:-2]+'h5'
-
-    logger.debug('Storing weather model at: %s', f)
-
-    if os.path.exists(f):
-        logger.warning('Weather model already exists, skipping download')
-        download_flag = False
-
-    return download_flag, f
-
-
 def prepareWeatherModel(
         weatherDict,
         wmFileLoc,
@@ -61,7 +32,7 @@ def prepareWeatherModel(
     '''
     Parse inputs to download and prepare a weather model grid for interpolation
     '''
-    weather_model, weather_files, weather_model_name = \
+        weather_model, weather_files, weather_model_name = \
         weatherDict['type'], weatherDict['files'], weatherDict['name']
 
     # check whether weather model files are supplied
@@ -117,4 +88,9 @@ def prepareWeatherModel(
         p = weather_model.plot('wh', True)
         p = weather_model.plot('pqt', True)
 
-    return weather_model, lats, lons
+    try:
+        weather_model.write2HDF5()
+    except Exception:
+        logger.exception("Unable to save weathermodel to file")
+
+    return lats, lons
