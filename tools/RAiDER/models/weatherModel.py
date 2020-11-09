@@ -38,6 +38,7 @@ class WeatherModel(ABC):
         self._a = []
         self._b = []
 
+        self._model_file_type = 'h5'
         self.files = None
 
         self._lon_res = None
@@ -109,6 +110,27 @@ class WeatherModel(ABC):
         string += 'B: {}\n'.format(self._b)
         return str(string)
 
+    @abstractmethod
+    def load_weather(self, *args, **kwargs):
+        '''
+        Placeholder method. Should be implemented in each weather model type class
+        '''
+        pass
+
+    @abstractmethod
+    def checkWeatherExtents(*args, **kwargs)
+        '''
+        Placeholder method. Should be implemented in each weather model type class
+        '''
+        pass
+
+    @abstractmethod
+    def _fetch(self, lats, lons, time, out):
+        '''
+        Placeholder method. Should be implemented in each weather model type class
+        '''
+        pass
+
     def Model(self):
         return self._Name
 
@@ -121,12 +143,23 @@ class WeatherModel(ABC):
         self._time = time
         self._fetch(lats, lons, time, out)
 
-    @abstractmethod
-    def _fetch(self, lats, lons, time, out):
+    def checkTime(self, time):
         '''
-        Placeholder method. Should be implemented in each weather model type class
+        Checks the time against the lag time and valid date range for the given model type
         '''
-        pass
+        logger.info(
+            'Weather model %s is available from %s-%s',
+            self.Model(), self._valid_range[0], self._valid_range[1]
+        )
+        if time < self._valid_range[0]:
+            raise RuntimeError("Weather model {} is not available at {}".format(self.Model(), time))
+        if self._valid_range[1] is not None:
+            if self._valid_range[1] == 'Present':
+                pass
+            elif self._valid_range[1] < time:
+                raise RuntimeError("Weather model {} is not available at {}".format(self.Model(), time))
+        if time > datetime.datetime.utcnow() - self._lag_time:
+            raise RuntimeError("Weather model {} is not available at {}".format(self.Model(), time))
 
     def load(self, *args, outLats=None, outLons=None, los=None, _zlevels=None, zref=None, **kwargs):
         '''
@@ -135,6 +168,7 @@ class WeatherModel(ABC):
         '''
         if zref is not None:
             self._zmax = zref
+        self._checkWeatherExtents(*args, **kwargs)
         self.load_weather(*args, **kwargs)
         self._find_e()
         self._checkNotMaskedArrays()
@@ -144,6 +178,77 @@ class WeatherModel(ABC):
         self._get_hydro_refractivity()
         self._adjust_grid(lats=outLats, lons=outLons)
         self._getZTD(los, zref)
+
+    def plot(self, plotType='pqt', savefig=True):
+        '''
+        Plotting method. Valid plot types are 'pqt'
+        '''
+        if plotType == 'pqt':
+            plot = plots.plot_pqt(self, savefig)
+        elif plotType == 'wh':
+            plot = plots.plot_wh(self, savefig)
+        else:
+            raise RuntimeError('WeatherModel.plot: No plotType named {}'.format(plotType))
+        return plot
+
+    def filename(self, outLoc = 'weather_files'):
+        ''' Create a filename to store the weather model '''
+        with contextlib.suppress(FileExistsError):
+            os.mkdir(outLoc)
+        file_fmt = self._getFileType()
+
+        download_flag = True
+        f = os.path.join(
+            outLoc,
+            '{}_{}.{}'.format(
+                self.Model(),
+                datetime.strftime(self._time, '%Y_%m_%d_T%H_%M_%S'),
+                file_fmt
+            )
+        )
+    
+        logger.debug('Storing weather model at: %s', f)
+    
+        if os.path.exists(f):
+            logger.warning('Weather model already exists, skipping download')
+            download_flag = False
+    
+        self.files = [f]
+        
+    def getWetRefractivity(self):
+        return self._wet_refractivity
+
+    def getHydroRefractivity(self):
+        return self._hydrostatic_refractivity
+
+    def getProjection(self):
+        '''
+        Returns the native weather projection, which should be a pyproj object
+        '''
+        return self._proj
+
+    def getPoints(self):
+        return self._xs.copy(), self._ys.copy(), self._zs.copy()
+
+    def getXY_gdal(self, filename):
+        '''
+        Pull the grid info (x,y) from a gdal-readable file
+        '''
+        from osgeo import gdal
+        ds = gdal.Open(filename, gdal.GA_ReadOnly)
+        xSize, ySize = ds.RasterXSize, ds.RasterYSize
+        trans = ds.GetGeoTransform()
+        del ds
+
+        # make regular point grid
+        pixelSizeX = trans[1]
+        pixelSizeY = trans[5]
+        eastOrigin = trans[0] + 0.5 * pixelSizeX
+        northOrigin = trans[3] + 0.5 * pixelSizeY
+        xArray = np.arange(eastOrigin, eastOrigin + pixelSizeX * xSize, pixelSizeX)
+        yArray = np.arange(northOrigin, northOrigin + pixelSizeY * ySize, pixelSizeY)
+
+        return xArray, yArray
 
     def _getZTD(self, los, zref=const._ZREF):
         '''
@@ -166,42 +271,11 @@ class WeatherModel(ABC):
         self._hydrostatic_ztd = hydro_total
         self._wet_ztd = wet_total
 
-    @abstractmethod
-    def load_weather(self, *args, **kwargs):
+    def _getFileType(self):
         '''
         Placeholder method. Should be implemented in each weather model type class
         '''
-        pass
-
-    def plot(self, plotType='pqt', savefig=True):
-        '''
-        Plotting method. Valid plot types are 'pqt'
-        '''
-        if plotType == 'pqt':
-            plot = plots.plot_pqt(self, savefig)
-        elif plotType == 'wh':
-            plot = plots.plot_wh(self, savefig)
-        else:
-            raise RuntimeError('WeatherModel.plot: No plotType named {}'.format(plotType))
-        return plot
-
-    def checkTime(self, time):
-        '''
-        Checks the time against the lag time and valid date range for the given model type
-        '''
-        logger.info(
-            'Weather model %s is available from %s-%s',
-            self.Model(), self._valid_range[0], self._valid_range[1]
-        )
-        if time < self._valid_range[0]:
-            raise RuntimeError("Weather model {} is not available at {}".format(self.Model(), time))
-        if self._valid_range[1] is not None:
-            if self._valid_range[1] == 'Present':
-                pass
-            elif self._valid_range[1] < time:
-                raise RuntimeError("Weather model {} is not available at {}".format(self.Model(), time))
-        if time > datetime.datetime.utcnow() - self._lag_time:
-            raise RuntimeError("Weather model {} is not available at {}".format(self.Model(), time))
+        return self._model_file_type
 
     def _convertmb2Pa(self, pres):
         '''
@@ -250,12 +324,6 @@ class WeatherModel(ABC):
         Calculate the hydrostatic delay from pressure and temperature
         '''
         self._hydrostatic_refractivity = self._k1 * self._p / self._t
-
-    def getWetRefractivity(self):
-        return self._wet_refractivity
-
-    def getHydroRefractivity(self):
-        return self._hydrostatic_refractivity
 
     def _adjust_grid(self, lats=None, lons=None):
         '''
@@ -461,45 +529,21 @@ class WeatherModel(ABC):
 
         return geopotential, pressurelvs, geoheight
 
-    def _get_ll_bounds(self, lats, lons, Nextra=2):
+    def _get_ll_bounds(self, lats = None, lons = None, Nextra=2):
         '''
         returns the extents of lat/lon plus a buffer
         '''
-        lat_min = max(np.nanmin(lats) - Nextra * self._lat_res, -90)
-        lat_max = min(np.nanmax(lats) + Nextra * self._lat_res, 90)
-        lon_min = max(np.nanmin(lons) - Nextra * self._lon_res, -180)
-        lon_max = min(np.nanmax(lons) + Nextra * self._lon_res, 180)
+        if lats is None:
+            lats = self._lats
+        if lons is None:
+            lons = self._lons
+
+        lat_min = np.nanmin(lats) - Nextra * self._lat_res
+        lat_max = np.nanmax(lats) + Nextra * self._lat_res
+        lon_min = np.nanmin(lons) - Nextra * self._lon_res
+        lon_max = np.nanmax(lons) + Nextra * self._lon_res
 
         return lat_min, lat_max, lon_min, lon_max
-
-    def getProjection(self):
-        '''
-        Returns the native weather projection, which should be a pyproj object
-        '''
-        return self._proj
-
-    def getPoints(self):
-        return self._xs.copy(), self._ys.copy(), self._zs.copy()
-
-    def getXY_gdal(self, filename):
-        '''
-        Pull the grid info (x,y) from a gdal-readable file
-        '''
-        from osgeo import gdal
-        ds = gdal.Open(filename, gdal.GA_ReadOnly)
-        xSize, ySize = ds.RasterXSize, ds.RasterYSize
-        trans = ds.GetGeoTransform()
-        del ds
-
-        # make regular point grid
-        pixelSizeX = trans[1]
-        pixelSizeY = trans[5]
-        eastOrigin = trans[0] + 0.5 * pixelSizeX
-        northOrigin = trans[3] + 0.5 * pixelSizeY
-        xArray = np.arange(eastOrigin, eastOrigin + pixelSizeX * xSize, pixelSizeX)
-        yArray = np.arange(northOrigin, northOrigin + pixelSizeY * ySize, pixelSizeY)
-
-        return xArray, yArray
 
     def _uniform_in_z(self, _zlevels=None):
         '''
@@ -563,15 +607,14 @@ class WeatherModel(ABC):
         import xarray as xr
 
         if outName is None:
-            outName = os.path.join(
-                os.getcwd(),
-                self._Name + 
-                datetime.datetime.strftime(
-                    self._time, '%Y_%m_%d_T%H_%M_%S'
-                ) + 
-                '.nc'
-            )
+            outName = makeWeatherModelFilename(self._Name, self._time, self._get_ll_bounds())
 
+        if os.path.exists(weather_model_file) and not force_write:
+            logger.warning(
+                'Weather model already exists, please remove it ("{}")  or pass "force_write = True"'.format(outName) 
+                'if you want to create a new one.'
+            )
+            return None
 
         if fmt == 'HDF5':
             with h5py.File(outName, 'w') as f:
@@ -724,3 +767,26 @@ class WeatherModel(ABC):
             ds.to_netcdf(outName)
 
             del ds
+
+
+def makeWeatherModelFilename(name, time, ll_bounds):
+    if ll_bounds[0] < 0:
+        S = 'S'
+    else:
+        S = 'N'
+    if ll_bounds[1] < 0:
+        N = 'S'
+    else:
+        N = 'N'
+    if ll_bounds[2] < 0:
+        W = 'W'
+    else:
+        W = 'E'
+    if ll_bounds[3] < 0:
+        E = 'W'
+    else:
+        E = 'E'
+    return '{}_{}_{}{}_{}{}_{}{}_{}{}.h5'.format(
+        name, time.strftime("%Y-%m-%dT%H_%M_%S"), np.abs(ll_bounds[0]), S, np.abs(ll_bounds[1]), N, np.abs(ll_bounds[2]), W, np.abs(ll_bounds[3]), E
+    )
+
