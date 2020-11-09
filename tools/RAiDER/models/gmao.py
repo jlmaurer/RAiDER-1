@@ -17,6 +17,8 @@ class GMAO(WeatherModel):
         # initialize a weather model
         WeatherModel.__init__(self)
 
+        self._model_file_type = 'h5'
+
         self._humidityType = 'q'
         self._model_level_type = 'ml'  # Default, pressure levels are 'pl'
 
@@ -109,7 +111,7 @@ class GMAO(WeatherModel):
 
         try:
             # Note that lat/lon gets written twice for GMAO because they are the same as y/x
-            writeWeatherVars2HDF5(lats, lons, lons, lats, h, q, p, t, self._proj, out)
+            writeWeatherVars2HDF5(lats, lons, lons, lats, h, q, p, t, self._proj, )
         except Exception:
             logger.exception("Unable to save weathermodel to file")
 
