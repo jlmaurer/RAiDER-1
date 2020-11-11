@@ -117,6 +117,12 @@ class WeatherModel(ABC):
         Checks the input datetime against the valid date range for the model and then
         calls the model _fetch routine
         '''
+
+        # Check whether the file already exists
+        if os.path.exists(out):
+            logger.warning('File {} already exists, I will try to use it.'.format(out))
+            return
+
         self.checkTime(time)
         lats, lons = self.checkLL(lats, lons)
         self._time = time
