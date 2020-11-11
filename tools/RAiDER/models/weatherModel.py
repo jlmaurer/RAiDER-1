@@ -11,6 +11,7 @@ from RAiDER import constants as const
 from RAiDER import utilFcns as util
 from RAiDER.constants import Zenith
 from RAiDER.delayFcns import _integrateLOS, interpolate2, make_interpolator
+from RAiDER.dem import readRaster, isInside
 from RAiDER.interpolate import interpolate_along_axis
 from RAiDER.interpolator import fillna3D
 from RAiDER.losreader import getLookVectors
@@ -117,10 +118,11 @@ class WeatherModel(ABC):
         Checks the input datetime against the valid date range for the model and then
         calls the model _fetch routine
         '''
+        query_bounds = self._get_ll_bounds(lats, lons, Nextra=0)
 
-        # Check whether the file already exists
-        if os.path.exists(out):
-            logger.warning('File {} already exists, I will try to use it.'.format(out))
+        # Check whether the file already exists, and if it has the required bounds
+        if checkFileSufficient(out, query_bounds):
+            logger.warning('File {} already exists with the correct bounds, I will try to use it.'.format(out))
             return
 
         self.checkTime(time)
@@ -143,21 +145,11 @@ class WeatherModel(ABC):
         bounds are close to -90/90 (lats) and -180/180 (lons) and thus can be rounded to the 
         above regions (either in the downloading-file API or subsetting-data API) without problems.
         '''
-        if self._Name is 'GMAO' or self._Name is 'MERRA2':
-            ex_buffer_lon_max = self._lon_res
-        else:
-            ex_buffer_lon_max = 0.0
-    
-        # These are generalized for potential extra buffer in future models
-        ex_buffer_lat_min = 0.0
-        ex_buffer_lat_max = 0.0
-        ex_buffer_lon_min = 0.0
-    
         # At boundary lats and lons, need to modify Nextra buffer so that the lats and lons do not exceed the boundary
-        lats[lats < ( -90.0 + Nextra * self._lat_res + ex_buffer_lat_min)] = ( -90.0 + Nextra * self._lat_res + ex_buffer_lat_min)
-        lats[lats > (  90.0 - Nextra * self._lat_res - ex_buffer_lat_max)] = (  90.0 - Nextra * self._lat_res - ex_buffer_lat_max)
-        lons[lons < (-180.0 + Nextra * self._lon_res + ex_buffer_lon_min)] = (-180.0 + Nextra * self._lon_res + ex_buffer_lon_min)
-        lons[lons > ( 180.0 - Nextra * self._lon_res - ex_buffer_lon_max)] = ( 180.0 - Nextra * self._lon_res - ex_buffer_lon_max)
+        lats[lats >  90 ] =   90 
+        lats[lats < -90 ] =  -90 
+        lons[lons >  180] =  180 
+        lons[lons < -180] = -180
     
         return lats, lons
 
@@ -498,10 +490,10 @@ class WeatherModel(ABC):
         '''
         returns the extents of lat/lon plus a buffer
         '''
-        lat_min = np.nanmin(lats) - Nextra * self._lat_res
-        lat_max = np.nanmax(lats) + Nextra * self._lat_res
-        lon_min = np.nanmin(lons) - Nextra * self._lon_res
-        lon_max = np.nanmax(lons) + Nextra * self._lon_res
+        lat_min = np.nanmax([np.nanmin(lats) - Nextra * self._lat_res,  -90])
+        lat_max = np.nanmin([np.nanmax(lats) + Nextra * self._lat_res,   90])
+        lon_min = np.nanmax([np.nanmin(lons) - Nextra * self._lon_res, -180])
+        lon_max = np.nanmin([np.nanmax(lons) + Nextra * self._lon_res,  180])
 
         return lat_min, lat_max, lon_min, lon_max
 
@@ -654,3 +646,26 @@ class WeatherModel(ABC):
             hydro_ztd.dims[2].attach_scale(z)
 
             f.create_dataset('Projection', data=self._proj.to_json())
+
+def checkFileSufficient(filename, query_bounds):
+    ''' Check whether a file exists and has sufficent bounds  to cover the query points '''
+
+    # If using WRF, pass true
+    if len(filename)==2:
+        return True
+
+    # Otherwise, check whether the file exists and if it has the correct bounds
+    if not os.path.exists(filename):
+        return False
+    try:
+        import pdb; pdb.set_trace()
+        xSize, ySize, _, _, trans, _, _ = readRaster(filename)
+        file_bounds = getFileBounds(xSize, ySize, trans)
+        if not isInside(query_bounds, file_bounds):
+            return False
+    except RuntimeError:
+        return False
+
+    return True
+
+
