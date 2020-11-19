@@ -66,8 +66,7 @@ class Variogram():
 #        self._bins = None
 #        self.set_bin_func(bin_func=bin_func)
 #        self._lags = None
-        self._maxlag = None
-        self.maxlag = maxlag
+        self._maxlag = self._set_max_lag(maxlag)
 
         if coordinates is None and values is None:
             pass
@@ -83,32 +82,6 @@ class Variogram():
     def values(self):
         """Values of the Variogram instance """ 
         return self._values
-
-    @property
-    def bin_func(self):
-        """Binning function
-
-        Returns an instance of the function used for binning the separating
-        distances into the given amount of bins. Both functions use the same
-        signature of func(distances, n, maxlag).
-
-        The setter of this property utilizes the Variogram.set_bin_func to
-        set a new function.
-
-        Returns
-        -------
-        binning_function : function
-
-        See Also
-        --------
-        Variogram.set_bin_func
-
-        """
-        return self._bin_func
-
-    @bin_func.setter
-    def bin_func(self, bin_func):
-        self.set_bin_func(bin_func=bin_func)
 
     def set_bin_func(self, bin_func):
         """Set binning function
@@ -153,22 +126,6 @@ class Variogram():
         self.cof, self.cov = None, None
 
 
-    @property
-    def bins(self):
-        if self._bins is None:
-            self._bins = self.bin_func(self.distance, self.n_lags, self.maxlag)
-        return self._bins.copy()
-
-    @bins.setter
-    def bins(self, bins):
-        # set the new bins
-        self._bins = bins
-
-        # clean the groups as they are not valid anymore
-        self._groups = None
-        self.cov = None
-        self.cof = None
-
     def empirical(self, x):
         """Number of lag bins
 
@@ -179,14 +136,6 @@ class Variogram():
         """
         raise NotImplementedError
 
-
-    @property
-    def model(self):
-        return self._model
-
-    @model.setter
-    def model(self, value):
-        self.set_model(model_name=value)
 
     def set_model(self, model_name):
         """
@@ -216,31 +165,12 @@ class Variogram():
         else:
             self._model = model_name
 
-    @property
-    def use_nugget(self):
-        return self._use_nugget
-
-    @use_nugget.setter
-    def use_nugget(self, nugget):
-        if not isinstance(nugget, bool):
-            raise ValueError('use_nugget has to be of type bool.')
-
-        # set new value
-        self._use_nugget = nugget
-
-    @property
-    def dist_function(self):
-        return self._dist_func
 
     def _dist_func_wrapper(self, x):
         if callable(self._dist_func):
             return self._dist_func(x)
         else:
             return pdist(X=x, metric=self._dist_func)
-
-    @dist_function.setter
-    def dist_function(self, func):
-        self.set_dist_function(func=func)
 
     def set_dist_function(self, func):
         """Set distance function
@@ -277,29 +207,7 @@ class Variogram():
         else:
             raise ValueError('Input not supported. Pass a string or callable.')
 
-    @property
-    def distance(self):
-        if self._dist is None:
-            self._calc_distances()
-        return self._dist
-
-    @distance.setter
-    def distance(self, dist_array):
-        self._dist = dist_array
-
-    @property
-    def maxlag(self):
-        return self._maxlag
-
-    @maxlag.setter
-    def maxlag(self, value):
-        # reset fitting
-        self.cof, self.cov = None, None
-
-        # remove bins
-        self._bins = None
-        self._groups = None
-
+    def _set_max_lag(self, value):
         # set new maxlag
         if value is None:
             self._maxlag = 0.67 * np.max(self.distance)
@@ -312,6 +220,7 @@ class Variogram():
             self._maxlag = value * np.max(self.distance)
         else:
             self._maxlag = value
+
 
     def preprocessing(self, force=False):
         """Preprocessing function
