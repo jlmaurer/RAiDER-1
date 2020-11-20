@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 
 from scipy.optimize import curve_fit
 from scipy.spatial.distance import pdist
+from scipy.spatial.distance import cdist
 
 from skgstat import estimators, models, binning
 
@@ -30,9 +31,8 @@ class Variogram():
             coordinates = None, 
             values = None, 
             dist_func = 'euclidean',
-            bin_func = 'even',
-            model = 'spherical',
-            fit_method = 'trf',
+            bin_func = None,
+            model = None,
             deramp = False,
             use_nugget = False, 
             maxlag = None,
@@ -49,8 +49,6 @@ class Variogram():
         self._values = values
         
         # Model can be a function or a string
-        self.fit_method =fit_method
-        self._model = None
         self.set_model(model)
 
         self._use_nugget = use_nugget
@@ -60,13 +58,11 @@ class Variogram():
         self.cov = None
         self.cof = None
 
-#        # Experimental variogram parameters
-#        self._bin_func = None
-#        self._groups = None
-#        self._bins = None
-#        self.set_bin_func(bin_func=bin_func)
-#        self._lags = None
-        self._maxlag = self._set_max_lag(maxlag)
+        # Experimental variogram parameters
+        self.set_bin_func(bin_func=bin_func)
+        self._groups = None
+        self._bins = None
+        self.set_maxlag(maxlag)
 
         if coordinates is None and values is None:
             pass
@@ -83,88 +79,63 @@ class Variogram():
         """Values of the Variogram instance """ 
         return self._values
 
+    @property
+    def experimental(self):
+        """
+        Return the experimental variogram
+        """
+        return self._experimental
+
     def set_bin_func(self, bin_func):
-        """Set binning function
-
-        Sets a new binning function to be used. The new binning method is set
-        by a string identifying the new function to be used. Can be one of:
-        ['even', 'uniform'].
-
-        Parameters
-        ----------
-        bin_func : str
-            Can be one of:
-
-            * **'even'**: Use skgstat.binning.even_width_lags for using
-              n_lags lags of equal width up to maxlag.
-            * **'uniform'**: Use skgstat.binning.uniform_count_lags for using
-              n_lags lags up to maxlag in which the pairwise differences
-              follow a uniform distribution.
-
-        Returns
-        -------
-        void
-
-        See Also
-        --------
-        Variogram.bin_func
-        skgstat.binning.uniform_count_lags
-        skgstat.binning.even_width_lags
-
+        """
+        Sets a binning function, which should be a callable
         """
         # switch the input
-        if bin_func.lower() == 'even':
-            self._bin_func = binning.even_width_lags
-        elif bin_func.lower() == 'uniform':
-            self._bin_func = binning.uniform_count_lags
-        else:
-            raise ValueError('%s binning method is not known' % bin_func)
+        self._bin_func = bin_func
 
         # reset groups and bins
         self._groups = None
         self._bins = None
         self.cof, self.cov = None, None
 
+    def _calc_experimental(self, deramp=True):
+        ''' Compute the experimental variogram '''
+        if deramp:
+            A = np.array([self._X[:,0], self._X[:,1], np.ones(len(self._X))]).T
+            ramp = np.linalg.lstsq(A, self._values, rcond=None)[0]
+            _values = self._values - (np.matmul(A, ramp))
+        else:
+            _values = self._values
 
-    def empirical(self, x):
-        """Number of lag bins
+        # Calculate distances
+        self._dist = self._dist_func_wrapper(self._X)
+        self._calc_bins()
+        self._raw = 0.5 * np.square(pdist(self._values, metric = self._estimator))
+        self._calc_groups()
+        self._experimental = self.bin()
 
-        Pass the number of lag bins to be used on
-        this Variogram instance. This will reset
-        the grouping index and fitting parameters
-
+    def _calc_groups(self, force=False):
         """
-        raise NotImplementedError
+        Calculate the lag class mask array
+        """
+        # -1 is the group fir distances outside maxlag
+        self._groups = np.ones(len(self._dist), dtype=int) * -1
 
+        for i, bounds in enumerate(zip([0] + list(bin_edges), bin_edges)):
+            self._groups[np.where((self._dist >= bounds[0]) & (self._dist < bounds[1]))] = i
 
-    def set_model(self, model_name):
+    def _calc_bins(self):
+        ''' Get the bins '''
+        self._bins = self.bin_func(self.distance, self.n_lags, self.maxlag)
+
+    def set_model(self, model):
         """
         Set model as the new theoretical variogram function.
 
         """
         # reset the fitting
         self.cof, self.cov = None, None
-
-        if isinstance(model_name, str):
-            if model_name.lower() == 'spherical':
-                self._model = models.spherical
-            elif model_name.lower() == 'exponential':
-                self._model = models.exponential
-            elif model_name.lower() == 'gaussian':
-                self._model = models.gaussian
-            elif model_name.lower() == 'cubic':
-                self._model = models.cubic
-            elif model_name.lower() == 'stable':
-                self._model = models.stable
-            elif model_name.lower() == 'matern':
-                self._model = models.matern
-            else:
-                raise ValueError(
-                    'The theoretical Variogram function %s is not understood,'
-                    'please provide the function' % model_name)
-        else:
-            self._model = model_name
-
+        self._model = model_name
 
     def _dist_func_wrapper(self, x):
         if callable(self._dist_func):
@@ -194,18 +165,7 @@ class Variogram():
         # reset the distances and fitting
         self._dist = None
         self.cof, self.cov = None, None
-
-        if isinstance(func, str):
-            if func.lower() == 'rank':
-                raise NotImplementedError
-            else:
-                # if not ranks, it has to be a scipy metric
-                self._dist_func = func
-
-        elif callable(func):
-            self._dist_func = func
-        else:
-            raise ValueError('Input not supported. Pass a string or callable.')
+        self._dist_func = func
 
     def _set_max_lag(self, value):
         # set new maxlag
@@ -249,7 +209,7 @@ class Variogram():
         self._calc_diff(force=force)
 
 
-    def fit(self, force=False, method=None, **kwargs):
+    def fit(self, force=False, method=None, bounds=None, **kwargs):
         """Fit the variogram
 
         The fit function will fit the theoretical variogram function to the
@@ -315,7 +275,6 @@ class Variogram():
         # Switch the method
         # Trust Region Reflective
         if self.fit_method == 'trf':
-            bounds = (0, self.__get_fit_bounds(x, y))
             self.cof, self.cov = curve_fit(
                 self._model,
                 _x, _y,
@@ -447,43 +406,6 @@ class Variogram():
         """
         return copy.deepcopy(self)
 
-    def __get_fit_bounds(self, x, y):
-        """
-        Return the bounds for parameter space in fitting a variogram model.
-        The bounds are depended on the Model that is used
-
-        Returns
-        -------
-        list
-
-        """
-        mname = self._model.__name__
-
-        # use range, sill and smoothness parameter
-        if mname == 'matern':
-            # a is max(x), C0 is max(y) s is limited to 20?
-            bounds = [np.nanmax(x), np.nanmax(y), 20.]
-
-        # use range, sill and shape parameter
-        elif mname == 'stable':
-            # a is max(x), C0 is max(y) s is limited to 2?
-            bounds = [np.nanmax(x), np.nanmax(y), 2.]
-
-        # use only sill
-        elif mname == 'nugget':
-            # a is max(x):
-            bounds = [np.nanmax(x)]
-
-        # use range and sill
-        else:
-            # a is max(x), C0 is max(y)
-            bounds = [np.nanmax(x), np.nanmax(y)]
-
-        # if use_nugget is True add the nugget
-        if self.use_nugget:
-            bounds.append(0.99)
-
-        return bounds
 
     def predict(self, new_dist):
         """Theoretical variogram function
@@ -672,39 +594,6 @@ class VariogramAnalysis():
 
         return dists, vario
 
-    def _get_XY(self, x2d, y2d, indpars):
-        '''
-        Given a list of indices, return the x,y locations
-        from two matrices
-        '''
-        x = np.array([[x2d[r[0]], x2d[r[1]]] for r in indpars])
-        y = np.array([[y2d[r[0]], y2d[r[1]]] for r in indpars])
-        return x, y
-
-    def _get_distances(self, XY, method = 'cdist'):
-        '''
-        Return the distances between each point in a list of points
-        '''
-        from scipy.spatial.distance import cdist
-        return np.diag(cdist(XY[:, :, 0], XY[:, :, 1], metric='euclidean'))
-
-    def _get_samples(self, data, Nsamp=1000):
-        '''
-        pull samples from a 2D image for variogram analysis
-        '''
-        if len(data) < self.densitythreshold:
-            logger.warning('Less than {} points for this gridcell', self.densitythreshold)
-            logger.info('Will pass empty list')
-            d = []
-            indpars = []
-        else:
-            d, indpars = sample(data, Nsamp = Nsamp)
-
-
-    def _get_semivariance(self, XY, xy=None):
-        '''
-        Return variograms
-        '''
         return 0.5 * np.square(XY - xy)  # XY = 1st col xy= 2nd col
 
     def _binned_vario(self, hEff, rawVario, xBin=None):
