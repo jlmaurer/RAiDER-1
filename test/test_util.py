@@ -262,7 +262,6 @@ def test_gdal_extent2():
     with pytest.raises(AttributeError):
         gdal_extents(os.path.join(TEST_DIR, "test_geom", "lat.rdr"))
 
-
 def test_getTimeFromFile():
     name1 = 'abcd_2020_01_01_T00_00_00jijk.xyz'
     assert getTimeFromFile(name1) == datetime.datetime(2020, 1, 1, 0, 0, 0)
@@ -271,3 +270,4 @@ def test_getTimeFromFile():
 def test_model2module():
     model_module_name, model_obj = modelName2Module('ERA5')
     assert model_obj().Model() == 'ERA-5'
+

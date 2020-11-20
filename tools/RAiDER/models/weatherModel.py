@@ -38,6 +38,7 @@ class WeatherModel(ABC):
         self._a = []
         self._b = []
 
+        self._model_file_type = 'h5'
         self.files = None
 
         self._lon_res = None
@@ -109,6 +110,27 @@ class WeatherModel(ABC):
         string += 'B: {}\n'.format(self._b)
         return str(string)
 
+    @abstractmethod
+    def load_weather(self, *args, **kwargs):
+        '''
+        Placeholder method. Should be implemented in each weather model type class
+        '''
+        pass
+
+#    @abstractmethod
+#    def checkWeatherExtents(*args, **kwargs):
+#        '''
+#        Placeholder method. Should be implemented in each weather model type class
+#        '''
+#        pass
+
+    @abstractmethod
+    def _fetch(self, lats, lons, time, out):
+        '''
+        Placeholder method. Should be implemented in each weather model type class
+        '''
+        pass
+
     def Model(self):
         return self._Name
 
@@ -118,42 +140,27 @@ class WeatherModel(ABC):
         calls the model _fetch routine
         '''
         self.checkTime(time)
-        lats, lons = self.checkLL(lats, lons)
         self._time = time
         self._fetch(lats, lons, time, out)
 
-    @abstractmethod
-    def _fetch(self, lats, lons, time, out):
+    def checkTime(self, time):
         '''
-        Placeholder method. Should be implemented in each weather model type class
+        Checks the time against the lag time and valid date range for the given model type
         '''
-        pass
+        logger.info(
+            'Weather model %s is available from %s-%s',
+            self.Model(), self._valid_range[0], self._valid_range[1]
+        )
+        if time < self._valid_range[0]:
+            raise RuntimeError("Weather model {} is not available at {}".format(self.Model(), time))
+        if self._valid_range[1] is not None:
+            if self._valid_range[1] == 'Present':
+                pass
+            elif self._valid_range[1] < time:
+                raise RuntimeError("Weather model {} is not available at {}".format(self.Model(), time))
+        if time > datetime.datetime.utcnow() - self._lag_time:
+            raise RuntimeError("Weather model {} is not available at {}".format(self.Model(), time))
 
-    def checkLL(self, lats, lons, Nextra = 2):
-        ''' 
-        Need to correct lat/lon bounds because not all of the weather models have valid data 
-        exactly bounded by -90/90 (lats) and -180/180 (lons); for GMAO and MERRA2, need to 
-        adjust the longitude higher end with an extra buffer; for other models, the exact 
-        bounds are close to -90/90 (lats) and -180/180 (lons) and thus can be rounded to the 
-        above regions (either in the downloading-file API or subsetting-data API) without problems.
-        '''
-        if self._Name is 'GMAO' or self._Name is 'MERRA2':
-            ex_buffer_lon_max = self._lon_res
-        else:
-            ex_buffer_lon_max = 0.0
-    
-        # These are generalized for potential extra buffer in future models
-        ex_buffer_lat_min = 0.0
-        ex_buffer_lat_max = 0.0
-        ex_buffer_lon_min = 0.0
-    
-        # At boundary lats and lons, need to modify Nextra buffer so that the lats and lons do not exceed the boundary
-        lats[lats < ( -90.0 + Nextra * self._lat_res + ex_buffer_lat_min)] = ( -90.0 + Nextra * self._lat_res + ex_buffer_lat_min)
-        lats[lats > (  90.0 - Nextra * self._lat_res - ex_buffer_lat_max)] = (  90.0 - Nextra * self._lat_res - ex_buffer_lat_max)
-        lons[lons < (-180.0 + Nextra * self._lon_res + ex_buffer_lon_min)] = (-180.0 + Nextra * self._lon_res + ex_buffer_lon_min)
-        lons[lons > ( 180.0 - Nextra * self._lon_res - ex_buffer_lon_max)] = ( 180.0 - Nextra * self._lon_res - ex_buffer_lon_max)
-    
-        return lats, lons
 
     def load(self, *args, outLats=None, outLons=None, los=None, _zlevels=None, zref=None, **kwargs):
         '''
@@ -162,6 +169,7 @@ class WeatherModel(ABC):
         '''
         if zref is not None:
             self._zmax = zref
+#        self._checkWeatherExtents(*args, **kwargs)
         self.load_weather(*args, **kwargs)
         self._find_e()
         self._checkNotMaskedArrays()
@@ -171,6 +179,82 @@ class WeatherModel(ABC):
         self._get_hydro_refractivity()
         self._adjust_grid(lats=outLats, lons=outLons)
         self._getZTD(los, zref)
+
+    def plot(self, plotType='pqt', savefig=True):
+        '''
+        Plotting method. Valid plot types are 'pqt'
+        '''
+        if plotType == 'pqt':
+            plot = plots.plot_pqt(self, savefig)
+        elif plotType == 'wh':
+            plot = plots.plot_wh(self, savefig)
+        else:
+            raise RuntimeError('WeatherModel.plot: No plotType named {}'.format(plotType))
+        return plot
+
+    def filename(self, time = None, outLoc = 'weather_files'):
+        ''' Create a filename to store the weather model '''
+        os.makedirs(outLoc, exist_ok = True)
+        file_fmt = self._getFileType()
+
+        if time is None:
+            if self._time is None:
+                raise ValueError('Time must be specified before the file can be written')
+            else:
+                time = self._time
+
+        download_flag = True
+        f = os.path.join(
+            outLoc,
+            '{}_{}.{}'.format(
+                self.Model(),
+                datetime.datetime.strftime(time, '%Y_%m_%d_T%H_%M_%S'),
+                file_fmt
+            )
+        )
+    
+        logger.debug('Storing weather model at: %s', f)
+    
+        if os.path.exists(f):
+            logger.warning('Weather model already exists, skipping download')
+            download_flag = False
+    
+        self.files = [f]
+        
+    def getWetRefractivity(self):
+        return self._wet_refractivity
+
+    def getHydroRefractivity(self):
+        return self._hydrostatic_refractivity
+
+    def getProjection(self):
+        '''
+        Returns the native weather projection, which should be a pyproj object
+        '''
+        return self._proj
+
+    def getPoints(self):
+        return self._xs.copy(), self._ys.copy(), self._zs.copy()
+
+    def getXY_gdal(self, filename):
+        '''
+        Pull the grid info (x,y) from a gdal-readable file
+        '''
+        from osgeo import gdal
+        ds = gdal.Open(filename, gdal.GA_ReadOnly)
+        xSize, ySize = ds.RasterXSize, ds.RasterYSize
+        trans = ds.GetGeoTransform()
+        del ds
+
+        # make regular point grid
+        pixelSizeX = trans[1]
+        pixelSizeY = trans[5]
+        eastOrigin = trans[0] + 0.5 * pixelSizeX
+        northOrigin = trans[3] + 0.5 * pixelSizeY
+        xArray = np.arange(eastOrigin, eastOrigin + pixelSizeX * xSize, pixelSizeX)
+        yArray = np.arange(northOrigin, northOrigin + pixelSizeY * ySize, pixelSizeY)
+
+        return xArray, yArray
 
     def _getZTD(self, los, zref=const._ZREF):
         '''
@@ -193,42 +277,11 @@ class WeatherModel(ABC):
         self._hydrostatic_ztd = hydro_total
         self._wet_ztd = wet_total
 
-    @abstractmethod
-    def load_weather(self, *args, **kwargs):
+    def _getFileType(self):
         '''
         Placeholder method. Should be implemented in each weather model type class
         '''
-        pass
-
-    def plot(self, plotType='pqt', savefig=True):
-        '''
-        Plotting method. Valid plot types are 'pqt'
-        '''
-        if plotType == 'pqt':
-            plot = plots.plot_pqt(self, savefig)
-        elif plotType == 'wh':
-            plot = plots.plot_wh(self, savefig)
-        else:
-            raise RuntimeError('WeatherModel.plot: No plotType named {}'.format(plotType))
-        return plot
-
-    def checkTime(self, time):
-        '''
-        Checks the time against the lag time and valid date range for the given model type
-        '''
-        logger.info(
-            'Weather model %s is available from %s-%s',
-            self.Model(), self._valid_range[0], self._valid_range[1]
-        )
-        if time < self._valid_range[0]:
-            raise RuntimeError("Weather model {} is not available at {}".format(self.Model(), time))
-        if self._valid_range[1] is not None:
-            if self._valid_range[1] == 'Present':
-                pass
-            elif self._valid_range[1] < time:
-                raise RuntimeError("Weather model {} is not available at {}".format(self.Model(), time))
-        if time > datetime.datetime.utcnow() - self._lag_time:
-            raise RuntimeError("Weather model {} is not available at {}".format(self.Model(), time))
+        return self._model_file_type
 
     def _convertmb2Pa(self, pres):
         '''
@@ -277,12 +330,6 @@ class WeatherModel(ABC):
         Calculate the hydrostatic delay from pressure and temperature
         '''
         self._hydrostatic_refractivity = self._k1 * self._p / self._t
-
-    def getWetRefractivity(self):
-        return self._wet_refractivity
-
-    def getHydroRefractivity(self):
-        return self._hydrostatic_refractivity
 
     def _adjust_grid(self, lats=None, lons=None):
         '''
@@ -491,45 +538,21 @@ class WeatherModel(ABC):
 
         return geopotential, pressurelvs, geoheight
 
-    def _get_ll_bounds(self, lats, lons, Nextra=2):
+    def _get_ll_bounds(self, lats = None, lons = None, Nextra=2):
         '''
         returns the extents of lat/lon plus a buffer
         '''
+        if lats is None:
+            lats = self._lats
+        if lons is None:
+            lons = self._lons
+
         lat_min = np.nanmin(lats) - Nextra * self._lat_res
         lat_max = np.nanmax(lats) + Nextra * self._lat_res
         lon_min = np.nanmin(lons) - Nextra * self._lon_res
         lon_max = np.nanmax(lons) + Nextra * self._lon_res
 
         return lat_min, lat_max, lon_min, lon_max
-
-    def getProjection(self):
-        '''
-        Returns the native weather projection, which should be a pyproj object
-        '''
-        return self._proj
-
-    def getPoints(self):
-        return self._xs.copy(), self._ys.copy(), self._zs.copy()
-
-    def getXY_gdal(self, filename):
-        '''
-        Pull the grid info (x,y) from a gdal-readable file
-        '''
-        from osgeo import gdal
-        ds = gdal.Open(filename, gdal.GA_ReadOnly)
-        xSize, ySize = ds.RasterXSize, ds.RasterYSize
-        trans = ds.GetGeoTransform()
-        del ds
-
-        # make regular point grid
-        pixelSizeX = trans[1]
-        pixelSizeY = trans[5]
-        eastOrigin = trans[0] + 0.5 * pixelSizeX
-        northOrigin = trans[3] + 0.5 * pixelSizeY
-        xArray = np.arange(eastOrigin, eastOrigin + pixelSizeX * xSize, pixelSizeX)
-        yArray = np.arange(northOrigin, northOrigin + pixelSizeY * ySize, pixelSizeY)
-
-        return xArray, yArray
 
     def _uniform_in_z(self, _zlevels=None):
         '''
@@ -581,7 +604,8 @@ class WeatherModel(ABC):
         self._t = fillna3D(self._t)
         self._e = fillna3D(self._e)
 
-    def write2HDF5(self, outName=None):
+
+    def write(self, outName=None, fmt='NETCDF'):
         '''
         Write the main (i.e., needed for external calculations) data to an HDF5 file
         that can be accessed by external programs.
@@ -589,65 +613,189 @@ class WeatherModel(ABC):
         The point of doing this is to alleviate some of the memory load of keeping
         the full model in memory and make it easier to scale up the program.
         '''
+        import xarray as xr
 
         if outName is None:
-            outName = os.path.join(
-                os.getcwd(),
-                self._Name + datetime.datetime.strftime(
-                    self._time, '%Y_%m_%d_T%H_%M_%S'
-                ) + '.h5'
+            outName = makeWeatherModelFilename(self._Name, self._time, self._get_ll_bounds())
+
+        if os.path.exists(weather_model_file) and not force_write:
+            logger.warning(
+                'Weather model already exists, please remove it ("{}")  or pass "force_write = True"'
+                'if you want to create a new one.'.format(outName)
             )
+            return None
 
-        with h5py.File(outName, 'w') as f:
-            x = f.create_dataset('x', data=self._xs.astype(np.float64))
-            y = f.create_dataset('y', data=self._ys.astype(np.float64))
-            z = f.create_dataset('z', data=self._zs.astype(np.float64))
-            x.make_scale('x - weather model native')
-            y.make_scale('y - weather model native')
-            z.make_scale('z - weather model native')
+        if fmt == 'HDF5':
+            with h5py.File(outName, 'w') as f:
+                x = f.create_dataset('x', data=self._xs.astype(np.float64))
+                y = f.create_dataset('y', data=self._ys.astype(np.float64))
+                z = f.create_dataset('z', data=self._zs.astype(np.float64))
+                x.make_scale('x - weather model native')
+                y.make_scale('y - weather model native')
+                z.make_scale('z - weather model native')
 
-            lats = f.create_dataset('lat', data=self._lats.astype(np.float64))
-            lons = f.create_dataset('lon', data=self._lons.astype(np.float64))
-            lats.dims[0].attach_scale(x)
-            lats.dims[1].attach_scale(y)
-            lats.dims[2].attach_scale(z)
-            lons.dims[0].attach_scale(x)
-            lons.dims[1].attach_scale(y)
-            lons.dims[2].attach_scale(z)
+                lats = f.create_dataset('lat', data=self._lats.astype(np.float64))
+                lons = f.create_dataset('lon', data=self._lons.astype(np.float64))
+                lats.dims[0].attach_scale(x)
+                lats.dims[1].attach_scale(y)
+                lats.dims[2].attach_scale(z)
+                lons.dims[0].attach_scale(x)
+                lons.dims[1].attach_scale(y)
+                lons.dims[2].attach_scale(z)
 
-            t = f.create_dataset('t', data=self._t)
-            t.dims[0].attach_scale(x)
-            t.dims[1].attach_scale(y)
-            t.dims[2].attach_scale(z)
+                t = f.create_dataset('t', data=self._t)
+                t.dims[0].attach_scale(x)
+                t.dims[1].attach_scale(y)
+                t.dims[2].attach_scale(z)
 
-            p = f.create_dataset('p', data=self._p)
-            p.dims[0].attach_scale(x)
-            p.dims[1].attach_scale(y)
-            p.dims[2].attach_scale(z)
+                p = f.create_dataset('p', data=self._p)
+                p.dims[0].attach_scale(x)
+                p.dims[1].attach_scale(y)
+                p.dims[2].attach_scale(z)
 
-            e = f.create_dataset('e', data=self._e)
-            e.dims[0].attach_scale(x)
-            e.dims[1].attach_scale(y)
-            e.dims[2].attach_scale(z)
+                e = f.create_dataset('e', data=self._e)
+                e.dims[0].attach_scale(x)
+                e.dims[1].attach_scale(y)
+                e.dims[2].attach_scale(z)
 
-            wet = f.create_dataset('wet', data=self._wet_refractivity)
-            wet.dims[0].attach_scale(x)
-            wet.dims[1].attach_scale(y)
-            wet.dims[2].attach_scale(z)
+                wet = f.create_dataset('wet', data=self._wet_refractivity)
+                wet.dims[0].attach_scale(x)
+                wet.dims[1].attach_scale(y)
+                wet.dims[2].attach_scale(z)
 
-            wet_ztd = f.create_dataset('wet_ztd', data=self._wet_ztd)
-            wet_ztd.dims[0].attach_scale(x)
-            wet_ztd.dims[1].attach_scale(y)
-            wet_ztd.dims[2].attach_scale(z)
+                wet_ztd = f.create_dataset('wet_ztd', data=self._wet_ztd)
+                wet_ztd.dims[0].attach_scale(x)
+                wet_ztd.dims[1].attach_scale(y)
+                wet_ztd.dims[2].attach_scale(z)
 
-            hydro = f.create_dataset('hydro', data=self._hydrostatic_refractivity)
-            hydro.dims[0].attach_scale(x)
-            hydro.dims[1].attach_scale(y)
-            hydro.dims[2].attach_scale(z)
+                hydro = f.create_dataset('hydro', data=self._hydrostatic_refractivity)
+                hydro.dims[0].attach_scale(x)
+                hydro.dims[1].attach_scale(y)
+                hydro.dims[2].attach_scale(z)
 
-            hydro_ztd = f.create_dataset('hydro_ztd', data=self._hydrostatic_ztd)
-            hydro_ztd.dims[0].attach_scale(x)
-            hydro_ztd.dims[1].attach_scale(y)
-            hydro_ztd.dims[2].attach_scale(z)
+                hydro_ztd = f.create_dataset('hydro_ztd', data=self._hydrostatic_ztd)
+                hydro_ztd.dims[0].attach_scale(x)
+                hydro_ztd.dims[1].attach_scale(y)
+                hydro_ztd.dims[2].attach_scale(z)
 
-            f.create_dataset('Projection', data=self._proj.to_json())
+                f.create_dataset('Projection', data=self._proj.to_json()) 
+
+        elif fmt=='NETCDF':
+
+            if self._proj.to_epsg == '4326':
+                grid_dict = {
+                            'grid_mapping_name': "latitude_longitude", 
+                            'longitude_of_prime_meridian': 0.0,
+                            'semi_major_axis': 6378137.0,
+                            'inverse_flattening': 298.257223563,
+                            'epsg': self._proj.to_epsg(), 
+                    }
+            else:
+                raise NotImplementedError('Only EPSG: 4326 has been implemented in the NETCDF writer')
+
+            x = xr.DataArray(self._xs.astype(np.float64).copy())
+            y = xr.DataArray(self._ys.astype(np.float64).copy())
+            z = xr.DataArray(self._zs.astype(np.float64).copy())
+            x.attrs['description'] = 'weather_model_native_x'
+            x.attrs['standard_name'] = 'projection_x_coordinate'
+            y.attrs['description'] = 'weather_model_native_y'
+            y.attrs['standard_name'] = 'projection_y_coordinate'
+            z.attrs['description'] = 'weather_model_native_z'
+            z.attrs['standard_name'] = 'projection_z_coordinate'
+
+            ds = xr.Dataset(
+                {
+                    'lats': xr.DataArray(
+                        self._lats.astype(np.float64), 
+                        coords=[y, x, z], 
+                        dims=["y", "x", "z"], 
+                        attrs = {'units': 'deg_north', 'grid_mapping':'spatial_ref'}
+                    ),
+                    'lons': xr.DataArray(
+                        self._lons.astype(np.float64), 
+                        coords=[y, x, z], 
+                        dims=["y", "x", "z"], 
+                        attrs = {'units': 'deg_north', 'grid_mapping':'spatial_ref'}
+                    ),
+
+                    't': xr.DataArray(
+                        self._t, 
+                        coords=[y, x, z], 
+                        dims=["y", "x", "z"], 
+                        attrs = {'units':'deg_K', 'grid_mapping': 'spatial_ref'}
+                    ),
+                    'p': xr.DataArray(
+                        self._p, 
+                        coords=[y, x, z], 
+                        dims=["y", "x", "z"], 
+                        attrs = {'units':'Pa', 'grid_mapping': 'spatial_ref'}
+                    ),
+                    'e': xr.DataArray(
+                        self._e, 
+                        coords=[y, x, z], 
+                        dims=["y", "x", "z"], 
+                        attrs = {'units':'water_vapor', 'grid_mapping':'spatial_ref'}
+                    ),
+                    'wet': xr.DataArray(
+                        self._wet_refractivity,
+                        coords=[y, x, z], 
+                        dims=["y", "x", "z"], 
+                        attrs = {'grid_mapping': 'spatial_ref'}
+                    ),
+                    'hydro': xr.DataArray(
+                        self._hydrostatic_refractivity,  
+                        coords=[y, x, z], 
+                        dims=["y", "x", "z"], 
+                        attrs = {'grid_mapping': 'spatial_ref'}
+                    ),
+                    'wet_total': xr.DataArray(
+                        self._wet_ztd,
+                        coords=[y, x, z], 
+                        dims=["y", "x", "z"], 
+                        attrs = {'grid_mapping': 'spatial_ref'}
+                    ),
+                    'hydro_total': xr.DataArray(
+                        self._hydrostatic_ztd,
+                        coords=[y, x, z], 
+                        dims=["y", "x", "z"], 
+                        attrs = {'grid_mapping': 'spatial_ref'}
+                    ),
+                    'spatial_ref': xr.DataArray(
+                        self._proj.to_wkt(), 
+                        dims = (), 
+                        coords = (), 
+                        attrs = grid_dict
+                    )
+                }
+            )
+            ds.attrs['GDAL_AREA_OR_POINT'] = 'AREA'
+            ds.attrs['Conventions'] = 'CF-1.6'
+            ds.attrs['date_created'] = datetime.datetime.now().strftime("Z%Y%m%dT%H%M%S")
+            ds.attrs['Conventions'] = 'CF-1.6'
+            
+            ds.to_netcdf(outName)
+
+            del ds
+
+
+def makeWeatherModelFilename(name, time, ll_bounds):
+    if ll_bounds[0] < 0:
+        S = 'S'
+    else:
+        S = 'N'
+    if ll_bounds[1] < 0:
+        N = 'S'
+    else:
+        N = 'N'
+    if ll_bounds[2] < 0:
+        W = 'W'
+    else:
+        W = 'E'
+    if ll_bounds[3] < 0:
+        E = 'W'
+    else:
+        E = 'E'
+    return '{}_{}_{}{}_{}{}_{}{}_{}{}.h5'.format(
+        name, time.strftime("%Y-%m-%dT%H_%M_%S"), np.abs(ll_bounds[0]), S, np.abs(ll_bounds[1]), N, np.abs(ll_bounds[2]), W, np.abs(ll_bounds[3]), E
+    )
+

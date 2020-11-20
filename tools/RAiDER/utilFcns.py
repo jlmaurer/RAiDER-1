@@ -283,28 +283,6 @@ def makeDelayFileNames(time, los, outformat, weather_model_name, out):
     return wet_file_name, hydro_file_name
 
 
-def make_weather_model_filename(name, time, ll_bounds):
-    if ll_bounds[0] < 0:
-        S = 'S'
-    else:
-        S = 'N'
-    if ll_bounds[1] < 0:
-        N = 'S'
-    else:
-        N = 'N'
-    if ll_bounds[2] < 0:
-        W = 'W'
-    else:
-        W = 'E'
-    if ll_bounds[3] < 0:
-        E = 'W'
-    else:
-        E = 'E'
-    return '{}_{}_{}{}_{}{}_{}{}_{}{}.h5'.format(
-        name, time.strftime("%Y-%m-%dT%H_%M_%S"), np.abs(ll_bounds[0]), S, np.abs(ll_bounds[1]), N, np.abs(ll_bounds[2]), W, np.abs(ll_bounds[3]), E
-    )
-
-
 def checkShapes(los, lats, lons, hts):
     '''
     Make sure that by the time the code reaches here, we have a
@@ -423,12 +401,16 @@ def getTimeFromFile(filename):
     Parse a filename to get a date-time
     '''
     fmt = '%Y_%m_%d_T%H_%M_%S'
-    p = re.compile(r'\d{4}_\d{2}_\d{2}_T\d{2}_\d{2}_\d{2}')
+    re_fmt = r'\d{4}_\d{2}_\d{2}_T\d{2}_\d{2}_\d{2}'
+    p = re.compile(re_fmt)
     try:
         out = p.search(filename).group()
         return datetime.strptime(out, fmt)
     except:
-        raise RuntimeError('The filename for {} does not include a datetime in the correct format'.format(filename))
+        raise RuntimeError(
+            'getTimeFromFile: The filename for {} does not include a datetime '
+            'in the correct format, must be {}'.format(filename, re_fmt)
+        )
 
 
 def writePnts2HDF5(lats, lons, hgts, los, outName='testx.h5', chunkSize=None, noDataValue=0.):

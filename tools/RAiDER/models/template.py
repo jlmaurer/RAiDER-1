@@ -123,8 +123,6 @@ class customModelReader(WeatherModel):
         self._lats = lats
         self._lons = lons
 
-        ###########
-
     def _download_abcd_file(self, out, model_name, date_time, bounding_box):
         '''
         Auxilliary function:

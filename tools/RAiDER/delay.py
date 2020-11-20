@@ -19,7 +19,7 @@ from RAiDER.logger import *
 from RAiDER.losreader import getLookVectors
 from RAiDER.processWM import prepareWeatherModel
 from RAiDER.utilFcns import (
-    make_weather_model_filename, writeDelays, writePnts2HDF5
+    writeDelays, writePnts2HDF5
 )
 
 
@@ -109,37 +109,20 @@ def tropo_delay(args):
     if wmLoc is None:
         wmLoc = os.path.join(out, 'weather_files')
         
-    # weather model calculation    
-    wm_filename = make_weather_model_filename(weather_model['name'], time, ll_bounds)   
-    weather_model_file = os.path.join(wmLoc, wm_filename)
-
-    if not os.path.exists(weather_model_file):
-        weather_model, lats, lons = prepareWeatherModel(
-            weather_model, wmLoc, lats=lats, lons=lons, los=los, zref=zref,
-            time=time, download_only=download_only, makePlots=True
-        )
-        
-        if download_only:
-            return None, None
-
-        try:
-            weather_model.write2HDF5(weather_model_file)
-        except Exception:
-            logger.exception("Unable to save weathermodel to file")
-
-        del weather_model
-    else:
-        logger.warning(
-            'Weather model already exists, please remove it ("%s") if you want '
-            'to create a new one.', weather_model_file
-        )
-
-
-
+    lats, lons, weather_model_file = prepareWeatherModel(
+        weather_model, 
+        wmLoc, 
+        lats=lats, 
+        lons=lons, 
+        los=los, 
+        zref=zref,
+        time=time, 
+        download_only=download_only, 
+        makePlots=True
+    )
+    
     if download_only:
         return None, None
-
-
 
     # Pull the DEM.
     logger.debug('Beginning DEM calculation')
@@ -220,7 +203,7 @@ def weather_model_debug(los, lats, lons, ll_bounds, weather_model, wmLoc, zref,
             weather_model, wmLoc, lats=lats, lons=lons, los=los, zref=zref,
             time=time, download_only=download_only, makePlots=True)
         try:
-            weather_model.write2HDF5(weather_model_file)
+            weather_model.write(weather_model_file, fmt='HDF5')
         except Exception:
             logger.exception("Unable to save weathermodel to file")
 
