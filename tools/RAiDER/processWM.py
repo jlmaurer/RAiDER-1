@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 from datetime import datetime, date
 
 from RAiDER.logger import *
-from RAiDER.utilFcns import getTimeFromFile
+from RAiDER.ioFcns import getTimeFromFile
 
 
 def getWMFilename(weather_model_name, time, outLoc):
