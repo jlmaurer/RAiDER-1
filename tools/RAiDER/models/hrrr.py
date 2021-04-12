@@ -94,16 +94,15 @@ class HRRR(WeatherModel):
         _lats = np.broadcast_to(lats[..., np.newaxis],
                                 geo_hgt.shape)
 
-        # correct for latitude
-        self._get_heights(_lats, geo_hgt)
+        # correct z for latitude
+        self._xs = _xs
+        self._ys = _ys
+        self._zs = self._get_heights(_lats, geo_hgt)
 
         self._t = temps
         self._q = qs
-
         self._p = np.broadcast_to(pl[np.newaxis, np.newaxis, :],
                                   self._zs.shape)
-        self._xs = _xs
-        self._ys = _ys
         self._lats = _lats
         self._lons = _lons
 

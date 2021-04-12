@@ -17,14 +17,14 @@ from RAiDER.models.model_levels import (
 )
 
 
-class HRES(WeatherModel):
+class HRES(ECMWF):
     '''
     Implement ECMWF models
     '''
 
     def __init__(self, level_type='ml'):
         # initialize a weather model
-        WeatherModel.__init__(self)
+        ECMWF.__init__(self)
 
         # model constants
         self._k1 = 0.776   # [K/Pa]
@@ -42,10 +42,10 @@ class HRES(WeatherModel):
         self._classname = 'od'
         self._dataset = 'hres'
         self._Name = 'HRES'
-        self._proj = CRS.from_epsg(4326)
 
         # Tuple of min/max years where data is available.
         self._valid_range = (datetime.datetime(1983, 4, 20), "Present")
+
         # Availability lag time in days
         self._lag_time = datetime.timedelta(hours=6)
 
@@ -82,6 +82,13 @@ class HRES(WeatherModel):
         self._b = B_91_HRES
 
 
+    def setLevel(self, levelType='ml'):
+        '''Set the level type to model levels or pressure levels'''
+        if levelType in ['ml', 'pl']:
+            self._model_level_type = levelType
+        else:
+            raise RuntimeError('Level type {} is not recognized'.format(levelType))
+
     def load_weather(self, filename=None):
         '''
         Consistent class method to be implemented across all weather model types.
@@ -96,6 +103,8 @@ class HRES(WeatherModel):
             self._load_model_levels(filename)
         elif self._level_type == 'pl':
             self._load_pressure_levels(filename)
+        else:
+            raise RuntimeError('Level type {} is not recognized'.format(self._model_level_type))
        
 
     def _load_model_levels(self, filename):
@@ -105,113 +114,10 @@ class HRES(WeatherModel):
             verbose=False
         )
 
+        # Update the a, b values if needed
         if (self._time < datetime.datetime(2013, 6, 26, 0, 0, 0)):
             self.update_a_b()
 
-        # ECMWF appears to give me this backwards
-        if lats[0] > lats[1]:
-            z = z[::-1]
-            lnsp = lnsp[::-1]
-            t = t[:, ::-1]
-            q = q[:, ::-1]
-            lats = lats[::-1]
-        # Lons is usually ok, but we'll throw in a check to be safe
-        if lons[0] > lons[1]:
-            z = z[..., ::-1]
-            lnsp = lnsp[..., ::-1]
-            t = t[..., ::-1]
-            q = q[..., ::-1]
-            lons = lons[::-1]
-        # pyproj gets fussy if the latitude is wrong, plus our
-        # interpolator isn't clever enough to pick up on the fact that
-        # they are the same
-        lons[lons > 180] -= 360
-
-        self._t = t
-        self._q = q
-        geo_hgt, pres, hgt = self._calculategeoh(z, lnsp)
-
-        # re-assign lons, lats to match heights
-        _lons = np.broadcast_to(lons[np.newaxis, np.newaxis, :], hgt.shape)
-        _lats = np.broadcast_to(lats[np.newaxis, :, np.newaxis], hgt.shape)
-        # ys is latitude
-        self._get_heights(_lats, hgt)
-        h = self._zs.copy()
-
-        # We want to support both pressure levels and true pressure grids.
-        # If the shape has one dimension, we'll scale it up to act as a
-        # grid, otherwise we'll leave it alone.
-        if len(pres.shape) == 1:
-            p = np.broadcast_to(pres[:, np.newaxis, np.newaxis], self._zs.shape)
-        else:
-            p = pres
-
-        # Re-structure everything from (heights, lats, lons) to (lons, lats, heights)
-        p = np.transpose(p)
-        t = np.transpose(t)
-        q = np.transpose(q)
-        h = np.transpose(h)
-        _lats = np.transpose(_lats)
-        _lons = np.transpose(_lons)
-
-        # check this
-        # data cube format should be lats,lons,heights
-        p = p.swapaxes(0, 1)
-        q = q.swapaxes(0, 1)
-        t = t.swapaxes(0, 1)
-        h = h.swapaxes(0, 1)
-        _lats = _lats.swapaxes(0, 1)
-        _lons = _lons.swapaxes(0, 1)
-
-        # Flip all the axis so that zs are in order from bottom to top
-        p = np.flip(p, axis=2)
-        t = np.flip(t, axis=2)
-        q = np.flip(q, axis=2)
-        h = np.flip(h, axis=2)
-        _lats = np.flip(_lats, axis=2)
-        _lons = np.flip(_lons, axis=2)
-
-        self._p = p
-        self._q = q
-        self._t = t
-        self._lats = _lats
-        self._lons = _lons
-        self._xs = _lons.copy()
-        self._ys = _lats.copy()
-        self._zs = h
-
-    def _makeDataCubes(self, fname, verbose=False):
-        '''
-        Create a cube of data representing temperature and relative humidity
-        at specified pressure levels
-        '''
-        # get ll_bounds
-        S, N, W, E = self._ll_bounds
-
-        with xr.open_dataset(fname) as ds:
-            ds = ds.assign_coords(longitude=(((ds.longitude + 180) % 360) - 180))
-
-            # mask based on query bounds
-            m1 = (S <= ds.latitude) & (N >= ds.latitude)
-            m2 = (W <= ds.longitude) & (E >= ds.longitude)
-            block = ds.where(m1 & m2, drop=True)
-
-            # Pull the data
-            z = np.squeeze(block['z'].values)[0, ...]
-            t = np.squeeze(block['t'].values)
-            q = np.squeeze(block['q'].values)
-            lnsp = np.squeeze(block['lnsp'].values)[0, ...]
-            lats = np.squeeze(block.latitude.values)
-            lons = np.squeeze(block.longitude.values)
-
-            xs = lons.copy()
-            ys = lats.copy()
-
-        if z.size == 0:
-            raise RuntimeError('There is no data in z, '
-                               'you may have a problem with your mask')
-
-        return lats, lons, xs, ys, t, q, lnsp, z
 
     def _fetch(self, lats, lons, time, out, Nextra=2):
         '''

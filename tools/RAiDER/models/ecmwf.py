@@ -24,7 +24,11 @@ class ECMWF(WeatherModel):
 
         self._lon_res = 0.2
         self._lat_res = 0.2
+
         self._proj = CRS.from_epsg(4326)
+
+        self._expver = '1'
+        self._classname = 'od'
 
     def load_weather(self, *args, **kwargs):
         '''
@@ -35,85 +39,24 @@ class ECMWF(WeatherModel):
         '''
         self._load_model_level(*self.files)
 
+
     def _load_model_level(self, fname):
-        from scipy.io import netcdf as nc
-        with nc.netcdf_file(fname, 'r', maskandscale=True) as f:
-            # 0,0 to get first time and first level
-            z = f.variables['z'][0][0].copy()
-            lnsp = f.variables['lnsp'][0][0].copy()
-            t = f.variables['t'][0].copy()
-            qq = f.variables['q'][0].copy()
-            lats = f.variables['latitude'][:].copy()
-            lons = f.variables['longitude'][:].copy()
-            self._levels = len(f.variables['level'][:].copy())
 
-        # ECMWF appears to give me this backwards
-        if lats[0] > lats[1]:
-            z = z[::-1]
-            lnsp = lnsp[::-1]
-            t = t[:, ::-1]
-            Q = qq[:, ::-1]
-            lats = lats[::-1]
-        # Lons is usually ok, but we'll throw in a check to be safe
-        if lons[0] > lons[1]:
-            z = z[..., ::-1]
-            lnsp = lnsp[..., ::-1]
-            t = t[..., ::-1]
-            Q = qq[..., ::-1]
-            lons = lons[::-1]
-        # pyproj gets fussy if the latitude is wrong, plus our
-        # interpolator isn't clever enough to pick up on the fact that
-        # they are the same
-        lons[lons > 180] -= 360
+        # read data from file
+        lats, lons, xs, ys, t, q, p, h = self._makeDataCubes(
+            fname,
+            verbose=False
+        )
 
+        self._p = p
+        self._q = q
         self._t = t
-        self._q = Q
+        self._lats = lats
+        self._lons = lons
+        self._xs = xs.copy()
+        self._ys = ys.copy()
+        self._zs = h
 
-        geo_hgt, pres, hgt = self._calculategeoh(z, lnsp)
-
-        # re-assign lons, lats to match heights
-        _lons = np.broadcast_to(lons[np.newaxis, np.newaxis, :],
-                                hgt.shape)
-        _lats = np.broadcast_to(lats[np.newaxis, :, np.newaxis],
-                                hgt.shape)
-        # ys is latitude
-        self._get_heights(_lats, hgt)
-
-        # We want to support both pressure levels and true pressure grids.
-        # If the shape has one dimension, we'll scale it up to act as a
-        # grid, otherwise we'll leave it alone.
-        if len(pres.shape) == 1:
-            self._p = np.broadcast_to(pres[:, np.newaxis, np.newaxis],
-                                      self._zs.shape)
-        else:
-            self._p = pres
-
-        # Re-structure everything from (heights, lats, lons) to (lons, lats, heights)
-        self._p = np.transpose(self._p)
-        self._t = np.transpose(self._t)
-        self._q = np.transpose(self._q)
-        self._lats = np.transpose(_lats)
-        self._lons = np.transpose(_lons)
-        self._zs = np.transpose(self._zs)
-        self._ys = self._lats.copy()
-        self._xs = self._lons.copy()
-
-        # check this
-        # data cube format should be lats,lons,heights
-        self._lats = self._lats.swapaxes(0, 1)
-        self._lons = self._lons.swapaxes(0, 1)
-        self._xs = self._xs.swapaxes(0, 1)
-        self._ys = self._ys.swapaxes(0, 1)
-        self._zs = self._zs.swapaxes(0, 1)
-        self._p = self._p.swapaxes(0, 1)
-        self._q = self._q.swapaxes(0, 1)
-        self._t = self._t.swapaxes(0, 1)
-
-        # Flip all the axis so that zs are in order from bottom to top
-        self._p = np.flip(self._p, axis=2)
-        self._t = np.flip(self._t, axis=2)
-        self._q = np.flip(self._q, axis=2)
-        self._zs = np.flip(self._zs, axis=2)
 
     def _fetch(self, lats, lons, time, out, Nextra=2):
         '''
@@ -159,9 +102,7 @@ class ECMWF(WeatherModel):
             # date: Specify a single date as "2015-08-01" or a period as
             # "2015-08-01/to/2015-08-31".
             "date": datetime.datetime.strftime(corrected_date, "%Y-%m-%d"),
-            # type: Use an (analysis) unless you have a particular reason to
-            # use fc (forecast).
-            "type": "an",
+            "type": "an", # should be reanalysis ("an")
             # time: With type=an, time can be any of
             # "00:00:00/06:00:00/12:00:00/18:00:00".  With type=fc, time can
             # be any of "00:00:00/12:00:00",
@@ -221,3 +162,91 @@ class ECMWF(WeatherModel):
             logger.warning('Query time: {}'.format(acqTime))
             logger.exception(e)
             raise Exception
+
+
+    def _makeDataCubes(self, fname, verbose=False):
+        '''
+        Create a cube of data representing temperature and relative humidity
+        at specified pressure levels
+        '''
+        # get ll_bounds
+        S, N, W, E = self._ll_bounds
+
+        with xr.open_dataset(fname) as ds:
+            # Fix longitudes to be -180 - 180. 
+            # Note that if lons are already in this format it will not change them, except 180 -> -180.
+            ds = ds.assign_coords(longitude=(((ds.longitude + 180) % 360) - 180))
+    
+            # mask based on query bounds
+            m1 = (S <= ds.latitude) & (N >= ds.latitude)
+            m2 = (W <= ds.longitude) & (E >= ds.longitude)
+            block = ds.where(m1 & m2, drop=True)
+    
+            # Pull the data
+            z = np.squeeze(block['z'].values)[0, ...]
+            t = np.squeeze(block['t'].values)
+            q = np.squeeze(block['q'].values)
+            lnsp = np.squeeze(block['lnsp'].values)[0, ...]
+            lats = np.squeeze(block.latitude.values)
+            lons = np.squeeze(block.longitude.values)
+    
+            xs = lons.copy()
+            ys = lats.copy()
+    
+        if z.size == 0:
+            raise RuntimeError('There is no data in z, '
+                               'you may have a problem with your mask')
+    
+            # ECMWF appears to give me this backwards
+            if lats[0] > lats[1]:
+                z = z[::-1]
+                lnsp = lnsp[::-1]
+                t = t[:, ::-1]
+                q = q[:, ::-1]
+                lats = lats[::-1]
+            # Lons is usually ok, but we'll throw in a check to be safe
+            if lons[0] > lons[1]:
+                z = z[..., ::-1]
+                lnsp = lnsp[..., ::-1]
+                t = t[..., ::-1]
+                q = q[..., ::-1]
+                lons = lons[::-1]
+            # pyproj gets fussy if the latitude is wrong, plus our
+            # interpolator isn't clever enough to pick up on the fact that
+            # they are the same
+            lons[lons > 180] -= 360
+    
+            geo_hgt, pres, hgt = self._calculategeoh(z, lnsp)
+
+            # re-assign lons, lats to match heights
+            _lons = np.broadcast_to(lons[np.newaxis, np.newaxis, :], hgt.shape)
+            _lats = np.broadcast_to(lats[np.newaxis, :, np.newaxis], hgt.shape)
+
+            # ys is latitude
+            h = self._get_heights(_lats, hgt)
+    
+            # We want to support both pressure levels and true pressure grids.
+            # If the shape has one dimension, we'll scale it up to act as a
+            # grid, otherwise we'll leave it alone.
+            if len(pres.shape) == 1:
+                p = np.broadcast_to(pres[:, np.newaxis, np.newaxis], _zs.shape)
+            else:
+                p = pres
+    
+            # Re-structure everything from (heights, lats, lons) to (lons, lats, heights)
+            p = np.transpose(p).swapaxes(0, 1)
+            t = np.transpose(t).swapaxes(0, 1)
+            q = np.transpose(q).swapaxes(0, 1)
+            h = np.transpose(h).swapaxes(0, 1)
+            _lats = np.transpose(_lats).swapaxes(0, 1)
+            _lons = np.transpose(_lons).swapaxes(0, 1)
+    
+            # Flip all the axis so that zs are in order from bottom to top
+            p = np.flip(p, axis=2)
+            t = np.flip(t, axis=2)
+            q = np.flip(q, axis=2)
+            h = np.flip(h, axis=2)
+            _lats = np.flip(_lats, axis=2)
+            _lons = np.flip(_lons, axis=2)
+    
+        return lats, lons, xs, ys, t, q, p, h

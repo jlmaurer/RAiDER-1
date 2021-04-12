@@ -29,7 +29,7 @@ def test_computeDelay(tmp_path):
     # load the weather model type and date for the given scenario
     wmLoc = os.path.join(SCENARIO_DIR, 'weather_files')
 
-    true_delay = os.path.join(SCENARIO_DIR, 'ERA5_true_GNSS.csv')
+    true_delay = os.path.join(SCENARIO_DIR, 'GMAO_true_GNSS.csv')
 
     station_file = os.path.join(SCENARIO_DIR, 'stations.csv')
     copyfile(station_file, wetFile)
@@ -37,7 +37,7 @@ def test_computeDelay(tmp_path):
     lats = stats['Lat'].values
     lons = stats['Lon'].values
 
-    _, model_obj = modelName2Module('ERA5')
+    _, model_obj = modelName2Module('GMAO')
 
     with pushd(tmp_path):
 
@@ -48,9 +48,9 @@ def test_computeDelay(tmp_path):
         args['lons'] = lons
         args['ll_bounds'] = (33.746, 36.795, -118.312, -114.892)
         args['heights'] = ('merge', [wetFile])
-        args['pnts_file'] = 'ERA5_true_GNSS_query_points.h5'
+        args['pnts_file'] = 'GMAO_true_GNSS_query_points.h5'
         args['flag'] = "station_file"
-        args['weather_model'] = {"type": model_obj(), "files": None, "name": "ERA5"}
+        args['weather_model'] = {"type": model_obj(), "files": None, "name": "GMAO"}
         args['wmLoc'] = None
         args['zref'] = 20000.
         args['outformat'] = "csv"
