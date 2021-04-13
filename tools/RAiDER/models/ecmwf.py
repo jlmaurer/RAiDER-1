@@ -102,7 +102,6 @@ class ECMWF(WeatherModel):
             # date: Specify a single date as "2015-08-01" or a period as
             # "2015-08-01/to/2015-08-31".
             "date": datetime.datetime.strftime(corrected_date, "%Y-%m-%d"),
-            "type": "an", # should be reanalysis ("an")
             # time: With type=an, time can be any of
             # "00:00:00/06:00:00/12:00:00/18:00:00".  With type=fc, time can
             # be any of "00:00:00/12:00:00",
@@ -110,6 +109,7 @@ class ECMWF(WeatherModel):
             # step: With type=an, step is always "0". With type=fc, step can
             # be any of "3/6/9/12".
             "step": "0",
+            "type": "an", # should be reanalysis ("an")
             # grid: Only regular lat/lon grids are supported.
             "grid": '{}/{}'.format(lat_step, lon_step),
             "area": '{}/{}/{}/{}'.format(lat_max, lon_min, lat_min, lon_max),  # area: N/W/S/E

@@ -41,6 +41,7 @@ class HRES(ECMWF):
         self._expver = '1'
         self._classname = 'od'
         self._dataset = 'hres'
+        self._expver = 1
         self._Name = 'HRES'
 
         # Tuple of min/max years where data is available.
@@ -131,6 +132,7 @@ class HRES(ECMWF):
 
         # execute the search at ECMWF
         self._download_ecmwf(lat_min, lat_max, self._lat_res, lon_min, lon_max, self._lon_res, time, out)
+        #self._download_ecmwf_pl(lat_min, lat_max, self._lat_res, lon_min, lon_max, self._lon_res, time, out)
 
     def _download_ecmwf(self, lat_min, lat_max, lat_step, lon_min, lon_max, lon_step, time, out):
         from ecmwfapi import ECMWFService
@@ -239,7 +241,36 @@ class HRES(ECMWF):
         self._t = np.flip(self._t, axis=2)
         self._q = np.flip(self._q, axis=2)
 
+    def _download_ecmwf_pl(self, lat_min, lat_max, lat_step, lon_min, lon_max, lon_step, time, out):
+        from ecmwfapi import ECMWFService
+
+        server = ECMWFService("mars")
+
+        corrected_date = round_date(time, datetime.timedelta(hours=6))
+
+        server.execute({
+            'class': self._classname,
+            'dataset': self._dataset,
+            'expver': "{}".format(self._expver),
+            'resol': "av",
+            'stream': "oper",
+            'type': "an",
+            #'levelist': "1/to/{0}".format(self._levels),
+            'levelist': "all",
+            'levtype': "{}".format(self._model_level_type),
+            'param': "129.128/130.128/133.128/152",
+            'date': datetime.datetime.strftime(corrected_date, "%Y-%m-%d"),
+            'time': "{}".format(datetime.time.strftime(corrected_date.time(), '%H:%M:%S')),
+            'step': "0",
+            'grid': "{}/{}".format(lon_step, lat_step),
+            'area': "{}/{}/{}/{}".format(lat_max, lon_min, lat_min, lon_max),
+            'format': "netcdf",
+            'target': out,
+        })
+
+
 def floorish(val, frac):
     '''Round a value to the lower fractional part'''
     return val - (val % frac)
+
 
