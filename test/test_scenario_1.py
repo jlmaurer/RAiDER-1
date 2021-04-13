@@ -16,6 +16,7 @@ SCENARIO_DIR = os.path.join(TEST_DIR, "scenario_1")
 _RTOL = 1e-4
 
 
+<<<<<<< HEAD
 @pytest.mark.timeout(600)
 def test_tropo_delay_ERAI(tmp_path):
     '''
@@ -26,6 +27,9 @@ def test_tropo_delay_ERAI(tmp_path):
 
 
 @pytest.mark.timeout(600)
+=======
+@pytest.mark.timeout(120)
+>>>>>>> move fcns to superclass
 def test_tropo_delay_ERA5(tmp_path):
     '''
     Scenario:
@@ -34,6 +38,7 @@ def test_tropo_delay_ERA5(tmp_path):
     core_test_tropo_delay(tmp_path, modelName="ERA5")
 
 
+<<<<<<< HEAD
 @pytest.mark.timeout(600)
 def test_tropo_delay_ERA5T(tmp_path):
     '''
@@ -44,6 +49,9 @@ def test_tropo_delay_ERA5T(tmp_path):
 
 
 @pytest.mark.timeout(600)
+=======
+@pytest.mark.timeout(120)
+>>>>>>> move fcns to superclass
 def test_tropo_delay_HRES(tmp_path):
     '''
     Scenario:
@@ -52,7 +60,51 @@ def test_tropo_delay_HRES(tmp_path):
     core_test_tropo_delay(tmp_path, modelName="HRES")
 
 
+<<<<<<< HEAD
 @pytest.mark.timeout(600)
+def test_tropo_delay_GMAO(tmp_path):
+=======
+@pytest.mark.timeout(120)
+def test_tropo_delay_ERA5T(tmp_path):
+>>>>>>> move fcns to superclass
+    '''
+    Scenario:
+    1: Small area, GMAO, Zenith delay
+    '''
+    core_test_tropo_delay(tmp_path, modelName="GMAO")
+
+
+<<<<<<< HEAD
+@pytest.mark.skip(reason="MERRA2 keeps failing")
+def test_tropo_delay_MERRA2(tmp_path):
+=======
+@pytest.mark.timeout(120)
+def test_tropo_delay_ERAI(tmp_path):
+>>>>>>> move fcns to superclass
+    '''
+    Scenario:
+    1: Small area, MERRA2, Zenith delay
+    '''
+    core_test_tropo_delay(tmp_path, modelName="MERRA2")
+
+
+<<<<<<< HEAD
+@pytest.mark.skip(reason="NCMR keeps hanging")
+=======
+@pytest.mark.timeout(120)
+@pytest.mark.xfail(
+        raises=urllib.error.URLError
+    )
+>>>>>>> move fcns to superclass
+def test_tropo_delay_NCMR(tmp_path):
+    '''
+    Scenario:
+    1: Small area, NCMR, Zenith delay
+    '''
+    core_test_tropo_delay(tmp_path, modelName="NCMR")
+
+
+@pytest.mark.timeout(120)
 def test_tropo_delay_GMAO(tmp_path):
     '''
     Scenario:
@@ -61,22 +113,14 @@ def test_tropo_delay_GMAO(tmp_path):
     core_test_tropo_delay(tmp_path, modelName="GMAO")
 
 
-@pytest.mark.skip(reason="MERRA2 keeps failing")
-def test_tropo_delay_MERRA2(tmp_path):
-    '''
-    Scenario:
-    1: Small area, MERRA2, Zenith delay
-    '''
-    core_test_tropo_delay(tmp_path, modelName="MERRA2")
-
-
-@pytest.mark.skip(reason="NCMR keeps hanging")
-def test_tropo_delay_NCMR(tmp_path):
-    '''
-    Scenario:
-    1: Small area, NCMR, Zenith delay
-    '''
-    core_test_tropo_delay(tmp_path, modelName="NCMR")
+# comment out MERRA-2 test for now: it passes on local machines but not in CircleCI. Need further look into this.
+# @pytest.mark.timeout(120)
+# def test_tropo_delay_MERRA2(tmp_path):
+#    '''
+#    Scenario:
+#    1: Small area, MERRA2, Zenith delay
+#    '''
+#    core_test_tropo_delay(tmp_path, modelName="MERRA2")
 
 
 def core_test_tropo_delay(tmp_path, modelName):

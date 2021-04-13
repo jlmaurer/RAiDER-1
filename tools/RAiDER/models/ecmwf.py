@@ -1,6 +1,8 @@
 import datetime
 
 import numpy as np
+import xarray as xr
+
 from pyproj import CRS
 
 from RAiDER.logger import *
@@ -250,3 +252,77 @@ class ECMWF(WeatherModel):
             _lons = np.flip(_lons, axis=2)
     
         return lats, lons, xs, ys, t, q, p, h
+
+    def _load_pressure_level(self, filename, *args, **kwargs):
+        with xr.open_dataset(filename) as block:
+            # Pull the data
+            z = np.squeeze(block['z'].values)
+            t = np.squeeze(block['t'].values)
+            q = np.squeeze(block['q'].values)
+            lats = np.squeeze(block.latitude.values)
+            lons = np.squeeze(block.longitude.values)
+            levels = np.squeeze(block.level.values)
+
+        z = np.flip(z, axis=1)
+
+        # ECMWF appears to give me this backwards
+        import pdb; pdb.set_trace()
+        if lats[0] > lats[1]:
+            z = z[..., ::-1]
+            t = t[..., ::-1]
+            q = q[..., ::-1]
+            lats = lats[::-1]
+        # Lons is usually ok, but we'll throw in a check to be safe
+        if lons[0] > lons[1]:
+            z = z[..., ::-1]
+            t = t[..., ::-1]
+            q = q[..., ::-1]
+            lons = lons[::-1]
+        # pyproj gets fussy if the latitude is wrong, plus our
+        # interpolator isn't clever enough to pick up on the fact that
+        # they are the same
+        lons[lons > 180] -= 360
+
+        self._t = t
+        self._q = q
+
+        geo_hgt = z / self._g0
+
+        # re-assign lons, lats to match heights
+        _lons = np.broadcast_to(lons[np.newaxis, np.newaxis, :],
+                                geo_hgt.shape)
+        _lats = np.broadcast_to(lats[np.newaxis, :, np.newaxis],
+                                geo_hgt.shape)
+
+        # correct heights for latitude
+        self._get_heights(_lats, geo_hgt)
+
+        self._p = np.broadcast_to(levels[:, np.newaxis, np.newaxis],
+                                  self._zs.shape)
+
+        # Re-structure everything from (heights, lats, lons) to (lons, lats, heights)
+        self._p = np.transpose(self._p)
+        self._t = np.transpose(self._t)
+        self._q = np.transpose(self._q)
+        self._lats = np.transpose(_lats)
+        self._lons = np.transpose(_lons)
+        self._ys = self._lats.copy()
+        self._xs = self._lons.copy()
+        self._zs = np.transpose(self._zs)
+
+        # check this
+        # data cube format should be lats,lons,heights
+        self._lats = self._lats.swapaxes(0, 1)
+        self._lons = self._lons.swapaxes(0, 1)
+        self._xs = self._xs.swapaxes(0, 1)
+        self._ys = self._ys.swapaxes(0, 1)
+        self._zs = self._zs.swapaxes(0, 1)
+        self._p = self._p.swapaxes(0, 1)
+        self._q = self._q.swapaxes(0, 1)
+        self._t = self._t.swapaxes(0, 1)
+
+        # For some reason z is opposite the others
+        self._p = np.flip(self._p, axis=2)
+        self._t = np.flip(self._t, axis=2)
+        self._q = np.flip(self._q, axis=2)
+

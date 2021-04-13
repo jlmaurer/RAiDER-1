@@ -15,6 +15,7 @@ from RAiDER.models.model_levels import (
     A_91_HRES,
     B_91_HRES,
 )
+from RAiDER.models.ecmwf import ECMWF
 
 
 class HRES(ECMWF):
@@ -248,25 +249,27 @@ class HRES(ECMWF):
 
         corrected_date = round_date(time, datetime.timedelta(hours=6))
 
-        server.execute({
-            'class': self._classname,
-            'dataset': self._dataset,
-            'expver': "{}".format(self._expver),
-            'resol': "av",
-            'stream': "oper",
-            'type': "an",
-            #'levelist': "1/to/{0}".format(self._levels),
-            'levelist': "all",
-            'levtype': "{}".format(self._model_level_type),
-            'param': "129.128/130.128/133.128/152",
-            'date': datetime.datetime.strftime(corrected_date, "%Y-%m-%d"),
-            'time': "{}".format(datetime.time.strftime(corrected_date.time(), '%H:%M:%S')),
-            'step': "0",
-            'grid': "{}/{}".format(lon_step, lat_step),
-            'area': "{}/{}/{}/{}".format(lat_max, lon_min, lat_min, lon_max),
-            'format': "netcdf",
-            'target': out,
-        })
+        server.execute(
+            {
+                'class': self._classname,
+                'dataset': self._dataset,
+                'expver': "{}".format(self._expver),
+                'resol': "av",
+                'stream': "oper",
+                'type': "an",
+                #'levelist': "1/to/{0}".format(self._levels),
+                'levelist': "all",
+                'levtype': "{}".format(self._model_level_type),
+                'param': "129.128/130.128/133.128/152",
+                'date': datetime.datetime.strftime(corrected_date, "%Y-%m-%d"),
+                'time': "{}".format(datetime.time.strftime(corrected_date.time(), '%H:%M:%S')),
+                'step': "0",
+                'grid': "{}/{}".format(lon_step, lat_step),
+                'area': "{}/{}/{}/{}".format(lat_max, lon_min, lat_min, lon_max),
+                'format': "netcdf",
+            }, 
+            out
+        )
 
 
 def floorish(val, frac):
