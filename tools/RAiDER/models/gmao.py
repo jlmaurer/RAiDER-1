@@ -140,7 +140,7 @@ class GMAO(WeatherModel):
 
         try:
             # Note that lat/lon gets written twice for GMAO because they are the same as y/x
-            writeWeatherVars2NETCDF4(self, lats, lons, h, q, p, t, outName=out)
+            writeWeatherVars2NETCDF4(self, lats, lons, np.array(h), np.array(q), np.array(p), np.array(t), outName=out)
         except Exception:
             logger.exception("Unable to save weathermodel to file")
 
