@@ -151,7 +151,8 @@ def tropo_delay(args):
 
     # Write the input query points to a file
     # Check whether the query points file already exists
-    write_flag = checkQueryPntsFile(pnts_file, query_shape)
+    los_query_type = ['ZTD' if los is Zenith else 'STD']
+    write_flag = checkQueryPntsFile(pnts_file, query_shape, los_query_type)
 
     # Throw an error if the user passes the same filename but different points
     if os.path.exists(pnts_file) and write_flag:
@@ -173,7 +174,7 @@ def tropo_delay(args):
         los = getLookVectors(los, lats, lons, hgts, zref)
 
         # write to an HDF5 file
-        writePnts2HDF5(lats, lons, hgts, los, outName=pnts_file)
+        writePnts2HDF5(lats, lons, hgts, los, los_query_type, outName=pnts_file)
 
     else:
         logger.warning(
@@ -277,7 +278,7 @@ def weather_model_debug(
     return 1
 
 
-def checkQueryPntsFile(pnts_file, query_shape):
+def checkQueryPntsFile(pnts_file, query_shape, query_type):
     '''
     Check whether the query points file exists, and if it
     does, check that the shapes are all consistent
@@ -286,7 +287,12 @@ def checkQueryPntsFile(pnts_file, query_shape):
     if os.path.exists(pnts_file):
         # Check whether the number of points is consistent with the new inputs
         with h5py.File(pnts_file, 'r') as f:
-            if query_shape == f['lon'].attrs['Shape']:
-                write_flag = False
+            if query_shape == tuple(f['lon'].attrs['Shape']):
+                try:
+                    if f.attrs['los_type'] == query_type:
+                        write_flag = False
+                except AttributeError:
+                        pass
 
     return write_flag
+

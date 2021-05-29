@@ -40,7 +40,9 @@ def getHeights(lats, lons, heights, useWeatherNodes=False):
 
     if height_type == 'dem':
         try:
-            hts = gdal_open(height_data)
+            hts = gdal_open(height_data).astype(np.float32)
+            _, _, _, _, _, noDataVal, _ = readRaster(height_data)
+            hts[hts==noDataVal] = np.nan
         except:
             logger.warning(
                 'File %s could not be opened; requires GDAL-readable file.',

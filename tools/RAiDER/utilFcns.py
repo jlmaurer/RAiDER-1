@@ -427,7 +427,7 @@ def getTimeFromFile(filename):
         raise RuntimeError('The filename for {} does not include a datetime in the correct format'.format(filename))
 
 
-def writePnts2HDF5(lats, lons, hgts, los, outName='testx.h5', chunkSize=None, noDataValue=0.):
+def writePnts2HDF5(lats, lons, hgts, los, los_type, outName='testx.h5', chunkSize=None, noDataValue=0.):
     '''
     Write query points to an HDF5 file for storage and access
     '''
@@ -451,6 +451,7 @@ def writePnts2HDF5(lats, lons, hgts, los, outName='testx.h5', chunkSize=None, no
 
     with h5py.File(outName, 'w') as f:
         f.attrs['Conventions'] = np.string_("CF-1.8")
+        f.attrs['los_type'] = np.string_(los_type)
 
         x = f.create_dataset('lon', data=lons, chunks=chunkSize, fillvalue=noDataValue)
         y = f.create_dataset('lat', data=lats, chunks=chunkSize, fillvalue=noDataValue)
