@@ -441,10 +441,7 @@ def writePnts2HDF5(lats, lons, hgts, los, los_type, outName='testx.h5', chunkSiz
     os.makedirs(os.path.abspath(os.path.dirname(outName)), exist_ok=True)
 
     if chunkSize is None:
-        minChunkSize = 100
-        maxChunkSize = 1000
-        cpu_count = mp.cpu_count()
-        chunkSize = tuple(max(min(maxChunkSize, s // cpu_count), min(s, minChunkSize)) for s in in_shape)
+        chunkSize = getChunkSize(in_shape)
 
     logger.debug('Chunk size is {}'.format(chunkSize))
     logger.debug('Array shape is {}'.format(in_shape))
@@ -883,3 +880,14 @@ def show_progress(block_num, block_size, total_size):
     else:
         pbar.finish()
         pbar = None
+
+
+def getChunkSize(in_shape, cpu_count=None):
+    '''Create an optimal chunk size for use when processing rays'''
+    minChunkSize = [200 if len(in_shape)>1 else 1000][0]
+    maxChunkSize = [500 if len(in_shape)>1 else 5000][0]
+    if cpu_count is None:
+        cpu_count = mp.cpu_count()
+    chunkSize = tuple(max(min(maxChunkSize, s // cpu_count), min(s, minChunkSize)) for s in in_shape)
+    return chunkSize
+

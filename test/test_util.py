@@ -12,7 +12,7 @@ from osgeo import gdal, osr
 from RAiDER.utilFcns import (
     _least_nonzero, cosd, gdal_open, makeDelayFileNames, sind,
     writeArrayToRaster, writeResultsToHDF5, gdal_extents, modelName2Module,
-    getTimeFromFile
+    getTimeFromFile,getChunkSize
 )
 
 
@@ -352,3 +352,35 @@ def test_WGS84_to_UTM():
     cal_utm_common = np.array([Z, X, Y]).transpose()
     assert np.allclose(true_utm_common, cal_utm_common)
     assert np.all(true_utm_common_letter == L)
+
+
+def test_getChunkSize_1():
+    assert getChunkSize((100,), 1) == (100,)
+
+def test_getChunkSize_2():
+    assert getChunkSize((100,), 10) == (100,)
+
+def test_getChunkSize_3():
+    assert getChunkSize((1000,), 1) == (1000,)
+
+def test_getChunkSize_4():
+    assert getChunkSize((1000,), 10) == (1000,)
+
+def test_getChunkSize_5():
+    assert getChunkSize((1010,), 1) == (1010,)
+
+def test_getChunkSize_6():
+    assert getChunkSize((10000,), 1) == (5000,)
+
+def test_getChunkSize_7():
+    assert getChunkSize((1000,10), 1) == (500,10)
+
+def test_getChunkSize_8():
+    assert getChunkSize((1000,10), 10) == (200,10)
+
+def test_getChunkSize_9():
+    assert getChunkSize((10000,1000), 1) == (500,500)
+
+def test_getChunkSize_10():
+    assert getChunkSize((2000,1000), 10) == (200,200)
+

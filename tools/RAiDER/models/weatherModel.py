@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 import numpy as np
 import netCDF4
 import rasterio
+
 from shapely.geometry import box
 from shapely.affinity import translate
 from shapely.ops import unary_union
@@ -389,7 +390,7 @@ class WeatherModel(ABC):
             if self.files is None:
                 raise ValueError('Need to save weather model as netcdf')
             weather_model_path = self.files[0]
-            with rasterio.open(f'netcdf:{weather_model_path}') as ds:
+            with rasterio.open('netcdf:{}'.format(weather_model_path)) as ds:
                 datasets = ds.subdatasets
 
             with rasterio.open(datasets[0]) as ds:

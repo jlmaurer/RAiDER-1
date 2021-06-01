@@ -11,4 +11,4 @@ from RAiDER.delay import (
 
 
 def test_cqpf1():
-    assert checkQueryPntsFile('does_not_exist.h5', None)
+    assert checkQueryPntsFile('does_not_exist.h5', None, None)

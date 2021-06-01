@@ -151,7 +151,7 @@ def tropo_delay(args):
 
     # Write the input query points to a file
     # Check whether the query points file already exists
-    los_query_type = ['ZTD' if los is Zenith else 'STD']
+    los_query_type = ['ZTD' if los is Zenith else 'STD'][0]
     write_flag = checkQueryPntsFile(pnts_file, query_shape, los_query_type)
 
     # Throw an error if the user passes the same filename but different points
@@ -289,9 +289,10 @@ def checkQueryPntsFile(pnts_file, query_shape, query_type):
         with h5py.File(pnts_file, 'r') as f:
             if query_shape == tuple(f['lon'].attrs['Shape']):
                 try:
-                    if f.attrs['los_type'] == query_type:
+                    los_type = f.attrs['los_type']
+                    if los_type.decode("utf-8")  == query_type:
                         write_flag = False
-                except AttributeError:
+                except KeyError:
                         pass
 
     return write_flag

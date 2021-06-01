@@ -71,16 +71,17 @@ def makeLatLonGrid(inFile, lonFileName, latFileName, fmt='ENVI'):
     writeArrayToRaster(Y, latFileName, 0., fmt, proj, gt)
 
 
-def makeLOSFile(incFile, azFile, fmt='ENVI', filename='los.rdr'):
+def makeLOSFile(incFile, azFile, fmt='ENVI', filename='los.rdr', ndv = 0.):
     '''
     Create a line-of-sight file from ARIA-derived azimuth and inclination files
     '''
     az, az_proj, az_gt = gdal_open(azFile, returnProj=True)
-    az[az == 0] = np.nan
+    heading = 90 - az
+
     inc = gdal_open(incFile)
 
-    heading = 90 - az
-    heading[np.isnan(heading)] = 0.
+    heading[np.isnan(heading)] = ndv
+    inc[np.isnan(inc)] = ndv
 
     array_shp = np.shape(az)[:2]
     dType = az.dtype
@@ -99,10 +100,10 @@ def makeLOSFile(incFile, azFile, fmt='ENVI', filename='los.rdr'):
     ds.SetGeoTransform(az_gt)
     b1 = ds.GetRasterBand(1)
     b1.WriteArray(inc)
-    b1.SetNoDataValue(0.)
+    b1.SetNoDataValue(ndv)
     b2 = ds.GetRasterBand(2)
     b2.WriteArray(heading)
-    b2.SetNoDataValue(0.)
+    b2.SetNoDataValue(ndv)
     ds = None
     b1 = None
     b2 = None
