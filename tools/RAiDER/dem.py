@@ -164,13 +164,12 @@ def download_dem(
         out = gdal_open(full_res_dem)
         logger.info('I am downloading a new DEM')
 
-    out = out[::-1]
     # Interpolate to the query points
     logger.debug('Beginning interpolation')
     outInterp = interpolateDEM(
             out, 
             np.stack((lats, lons), axis=-1), 
-            inExtent, 
+            trans, 
             method='linear',
         )
     logger.debug('Interpolation finished')

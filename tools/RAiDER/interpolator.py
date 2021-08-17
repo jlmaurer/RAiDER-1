@@ -108,18 +108,25 @@ def fillna3D(array, axis=-1):
     return np.moveaxis(out, -1, axis)
 
 
-def interpolateDEM(demRaster, outLL, extent, method='linear'):
+def interpolateDEM(demRaster, outLL, geoTransform, method='nearest'):
     ''' Interpolate a DEM raster to a set of lat/lon query points '''
-    minlat, maxlat, minlon, maxlon = extent
+    maxlat = geoTransform[3]
+    minlon = geoTransform[0]
+    dy = geoTransform[-1]
+    dx = geoTransform[1]
     nPixLat = demRaster.shape[0]
     nPixLon = demRaster.shape[1]
-    xlats = np.linspace(minlat, maxlat, nPixLat)
-    xlons = np.linspace(minlon, maxlon, nPixLon)
+
+    xlons = np.array([minlon + dx*k for k in range(nPixLon)])
+    ylats = np.array([maxlat + dy*k for k in range(nPixLat)])
+    ylats = ylats[::-1]
+
     interpolator = rgi(
-        points=(xlats, xlons),
+        points=(ylats, xlons),
         values=demRaster,
         method=method,
         bounds_error=False
     )
     outInterp = interpolator(outLL)
     return outInterp
+
