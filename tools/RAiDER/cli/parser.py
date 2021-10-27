@@ -37,6 +37,7 @@ def add_bbox(parser):
         nargs=4,
         type=float,
         dest='query_area',
-        action=BBoxAction,
-        metavar=('S', 'N', 'W', 'E')
+        action=BBoxAction
+        metavar=('S', 'N', 'W', 'E'),
+        default=[-90,90,-180,180],
     )

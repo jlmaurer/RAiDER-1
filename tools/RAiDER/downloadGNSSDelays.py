@@ -64,9 +64,7 @@ downloadGNSSdelay.py --download --out products -y 20100101 20141231 --returntime
     area.add_argument(
         '--station_file', '-f', default=None, dest='station_file',
         help=('Text file containing a list of 4-char station IDs separated by newlines'))
-    area.add_argument(
-        '-b', '--bounding_box', dest='bounding_box', type=str, default=None,
-        help="Provide either valid shapefile or Lat/Lon Bounding SNWE. -- Example : '19 20 -99.5 -98.5'")
+    add_bbox(area)
     area.add_argument(
         '--gpsrepo', '-gr', default='UNR', dest='gps_repo',
         help=('Specify GPS repository you wish to query. Currently supported archives: UNR.'))
@@ -312,11 +310,6 @@ def query_repos(
     # Setup bounding box
     if bounding_box:
         if not os.path.isfile(bounding_box):
-            try:
-                bbox = [float(val) for val in bounding_box.split()]
-            except ValueError:
-                raise Exception(
-                    'Cannot understand the --bbox argument. String input is incorrect or path does not exist.')
             if bbox[2] * bbox[3] < 0:
                 long_cross_zero = 1
             else:
