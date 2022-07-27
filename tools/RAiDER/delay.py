@@ -74,9 +74,7 @@ def tropo_delay(args):
         makePlots=verbose,
     )
 
-    if download_only:
-        return None, None
-    elif useWeatherNodes:
+    if useWeatherNodes:
         if heights[0] == 'lvs':
             # compute delays at the correct levels
             raise NotImplementedError
