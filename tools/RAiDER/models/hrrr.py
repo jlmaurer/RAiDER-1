@@ -1,5 +1,4 @@
 import datetime
-import logging
 import xarray
 import numpy as np
 import requests
@@ -148,24 +147,24 @@ class HRRR(WeatherModel):
         lons = ds['t'].longitude.values.copy()
 
         ds_new = xarray.Dataset(
-            data_vars=dict(
-                t= (["x", "y", 'level'], t),
-                z= (["x", "y", 'level'], z),
-                q= (["x", "y", 'level'], q),
-                lons=(["x", "y", "level"], lons),
-                lats=(["x", "y", "level"], lats),
-            ),
-            coords=dict(
-                level=np.arange(137) + 1,
-                x=(["x"], xArr),
-                y=(["y"], yArr),
-            ),
-            attrs=dict(
-                'Weather_model': 'HRRR',
-            )
+            data_vars={
+                "t": (["x", "y", "level"], t),
+                "z": (["x", "y", "level"], z),
+                "q": (["x", "y", "level"], q),
+                "lons": (["x", "y", "level"], lons),
+                "lats": (["x", "y", "level"], lats),
+            },
+            coords={
+                "level": np.arange(137) + 1,
+                "x": (["x"], xArr),
+                "y": (["y"], yArr),
+            },
+            attrs={
+                "Weather_model": "HRRR",
+            }
         )
         ds_new.to_netcdf(filename)
-            
+
         return t, z, q, xArr, yArr, lats, lons
 
     def _getPresLevels(self, low=50, high=1013.2, inc=25):

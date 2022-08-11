@@ -6,21 +6,16 @@
 # RESERVED. United States Government Sponsorship acknowledged.
 #
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-import h5py
 import itertools
 import multiprocessing as mp
-import time
 import xarray
-
 from netCDF4 import Dataset
 import numpy as np
-from pyproj import CRS, Transformer
+from pyproj import Transformer
 from scipy.interpolate import RegularGridInterpolator
 
-from RAiDER.constants import _STEP, _ZREF, _RE
 from RAiDER.interpolator import RegularGridInterpolator as Interpolator
 from RAiDER.makePoints import makePoints1D
-from RAiDER.losreader import getZenithLookVecs
 
 
 def calculate_start_points(x,y,z,ds):
