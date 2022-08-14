@@ -18,26 +18,29 @@ from RAiDER.interpolator import RegularGridInterpolator as Interpolator
 from RAiDER.makePoints import makePoints1D
 
 
-def calculate_start_points(x,y,z,ds):
+def calculate_start_points(x, y, z, ds):
     '''
     Parameters
     ----------
-    wm_file: str   - A file containing a regularized weather model. 
+    wm_file: str   - A file containing a regularized weather model.
 
     Returns
     -------
-    SP: ndarray    - a * x 3 array containing the XYZ locations of the pixels in ECEF coordinates. 
+    SP: ndarray    - a * x 3 array containing the XYZ locations of the pixels in ECEF coordinates.
                      Note the ordering of the array is [Y X Z]
     '''
     [X, Y, Z] = np.meshgrid(x, y, z)
 
     try:
         t = Transformer.from_crs(ds['CRS'], 4978, always_xy=True)  # converts to WGS84 geocentric
-    except:
+    except:  # TODO: Which exceptions?
         print("I can't find a CRS in the weather model file, so I will assume you are using WGS84")
         t = Transformer.from_crs(4326, 4978, always_xy=True)  # converts to WGS84 geocentric
 
-    return np.moveaxis(np.array(t.transform(X, Y, Z)), 0, -1), np.stack([X,Y,Z],axis=-1)
+    return (
+        np.moveaxis(np.array(t.transform(X, Y, Z)), 0, -1),
+        np.stack([X, Y, Z], axis=-1)
+    )
 
 
 def get_delays(
@@ -52,20 +55,21 @@ def get_delays(
     '''
     ifWet, ifHydro = getInterpolators(wm_file)
 
-    #with h5py.File(pnts_file, 'r') as f:
-    #    Nrays = f.attrs['NumRays']
-    #    chunkSize = f.attrs['ChunkSize']
-    #    in_shape = f['lon'].attrs['Shape']
-    #    arrSize = f['lon'].shape
-    #    max_len = np.nanmax(f['Rays_len'])
+    # with h5py.File(pnts_file, 'r') as f:
+    #     Nrays = f.attrs['NumRays']
+    #     chunkSize = f.attrs['ChunkSize']
+    #     in_shape = f['lon'].attrs['Shape']
+    #     arrSize = f['lon'].shape
+    #     max_len = np.nanmax(f['Rays_len'])
 
     with xarray.load_dataset(wm_file) as f:
         try:
             wm_proj = f.attrs['CRS']
-        except:
+        except KeyError:
             wm_proj = 4326
             print("I can't find a CRS in the weather model file, so I will assume you are using WGS84")
             t = Transformer.from_crs(4326, 4978, always_xy=True)  # converts to WGS84 geocentric
+            # TODO: t is unused
 
     in_shape = SP.shape[:-1]
     chunkSize = in_shape
@@ -95,7 +99,7 @@ def get_delays(
 
 def getInterpolators(wm_file, kind='pointwise'):
     '''
-    Read 3D gridded data from a processed weather model file and wrap it with 
+    Read 3D gridded data from a processed weather model file and wrap it with
     an interpolator
     '''
     # Get the weather model data

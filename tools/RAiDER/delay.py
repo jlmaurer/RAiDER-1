@@ -15,18 +15,12 @@ from pyproj import CRS, Transformer
 from scipy.interpolate import RegularGridInterpolator as Interpolator
 
 from RAiDER.constants import _STEP
-from RAiDER.delayFcns import (
-    getInterpolators,
-    calculate_start_points,
-    get_delays,
-)
+from RAiDER.delayFcns import getInterpolators, get_delays
 from RAiDER.dem import getHeights
 from RAiDER.logger import logger
 from RAiDER.losreader import getLookVectors, Zenith
 from RAiDER.processWM import prepareWeatherModel
-from RAiDER.utilFcns import (
-    gdal_open, writeDelays, projectDelays, writePnts2HDF5, lla2ecef,
-)
+from RAiDER.utilFcns import gdal_open, writeDelays, projectDelays, lla2ecef
 
 
 def tropo_delay(args):
@@ -101,12 +95,12 @@ def tropo_delay(args):
     )
 
     ####################################################################
-    # Transform the query points 
+    # Transform the query points
     pnt_proj = CRS.from_epsg(4326)
     ds = xarray.load_dataset(weather_model_file)
     try:
         wm_proj = ds['CRS']
-    except:
+    except:  # TODO: Which exceptions?
         print("WARNING: I can't find a CRS in the weather model file, so I will assume you are using WGS84")
         wm_proj = 4326
     if wm_proj != pnt_proj:
@@ -165,21 +159,23 @@ def tropo_delay(args):
             # Convert the line-of-sight inputs to look vectors
             in_shape = ds['longitude'].values.shape
             mask = ds.z.values < zref
-            lat = ds['latitude'].values[mask,...]
-            lon = ds['longitude'].values[mask,...]
+            lat = ds['latitude'].values[mask, ...]
+            lon = ds['longitude'].values[mask, ...]
             hgt = np.moveaxis(np.tile(ds.z.values[mask], (*in_shape[1:], 1)), (0, 1, 2), (1, 2, 0))
-            lat[lat < -90] = np.nan; lon[lon < -90] = np.nan; hgt[hgt< -90] = np.nan;
+            lat[lat < -90] = np.nan
+            lon[lon < -90] = np.nan
+            hgt[hgt < -90] = np.nan
             los, lengths = getLookVectors(
-                los, 
+                los,
                 lat,
                 lon,
                 hgt,
-                zref=zref, 
+                zref=zref,
                 time=time
             )
 
             # write to an HDF5 file
-            #writePnts2HDF5(lats, lons, hgts, los, lengths, outName=pnts_file)
+            # writePnts2HDF5(lats, lons, hgts, los, lengths, outName=pnts_file)
 
         logger.debug('Beginning raytracing calculation')
         logger.debug('Reference integration step is {:1.1f} m'.format(_STEP))
@@ -195,22 +191,22 @@ def tropo_delay(args):
 
         logger.debug('Finished raytracing calculation')
 
-        ifWet   = Interpolator(
-            (ds.z.values[mask], ds.y.values, ds.x.values), 
-            wet, 
+        ifWet = Interpolator(
+            (ds.z.values[mask], ds.y.values, ds.x.values),
+            wet,
             fill_value=np.nan,
             bounds_error=False,
         )
         ifHydro = Interpolator(
-            (ds.z.values[mask], ds.y.values, ds.x.values), 
-            hydro, 
+            (ds.z.values[mask], ds.y.values, ds.x.values),
+            hydro,
             fill_value=np.nan,
             bounds_error=False,
         )
         wetDelay = ifWet(pnts)
         hydroDelay = ifHydro(pnts)
 
-    del ds # cleanup
+    del ds  # cleanup
 
     ###########################################################
     # Write the delays to file

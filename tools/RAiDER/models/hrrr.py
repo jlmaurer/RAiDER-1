@@ -1,16 +1,13 @@
-import datetime
+import datetime as dt
 import xarray
 import numpy as np
 import requests
-
 from cfgrib.xarray_store import open_dataset
 from pyproj import CRS
 
 from RAiDER.logger import logger
 from RAiDER.models.weatherModel import WeatherModel
-from RAiDER.models.model_levels import (
-    LEVELS_137_HEIGHTS,
-)
+from RAiDER.models.model_levels import LEVELS_137_HEIGHTS
 
 
 class HRRR(WeatherModel):
@@ -25,8 +22,8 @@ class HRRR(WeatherModel):
         self._dataset = 'hrrr'
 
         # Tuple of min/max years where data is available.
-        self._valid_range = (datetime.datetime(2016, 7, 15), "Present")
-        self._lag_time = datetime.timedelta(hours=3)  # Availability lag time in days
+        self._valid_range = (dt.datetime(2016, 7, 15), "Present")
+        self._lag_time = dt.timedelta(hours=3)  # Availability lag time in days
 
         # model constants: TODO: need to update/double-check these
         self._k1 = 0.776  # [K/Pa]
