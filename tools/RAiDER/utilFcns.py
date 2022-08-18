@@ -1,4 +1,5 @@
 """Geodesy-related utility functions."""
+from typing import Tuple
 import multiprocessing as mp
 import os
 import re
@@ -56,7 +57,7 @@ def enu2ecef(
     lat0: ndarray,
     lon0: ndarray,
     h0: ndarray,
-):
+) -> ndarray:
     """
     Parameters
     ----------
@@ -81,9 +82,9 @@ def enu2ecef(
     return np.stack((u, v, w), axis=-1)
 
 
-def ecef2enu(xyz, lat, lon, height):
+def ecef2enu(xyz: Tuple[float, float, float], lat, lon) -> ndarray:
     '''Convert ECEF xyz to ENU'''
-    x, y, z = xyz[..., 0], xyz[..., 1], xyz[..., 2]
+    x, y, z = xyz
 
     t = cosd(lon) * x + sind(lon) * y
 

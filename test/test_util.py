@@ -390,62 +390,47 @@ def test_enu2ecef_6():
 
 def test_ecef2enu_1():
     enu = np.array([0, 0, 1])
-    llh = np.array([0, 0, 0])
-    enu = ecef2enu(enu, llh[0], llh[1], llh[2])
+    enu = ecef2enu(enu, 0, 0)
     assert np.allclose(enu, np.array([0, 1, 0]))
 
 
 def test_ecef2enu_2():
     enu = np.array([0, 0, 1])
-    llh = np.array([0, 90, 0])
-    ecef = ecef2enu(enu, llh[0], llh[1], llh[2])
+    ecef = ecef2enu(enu, 0, 90)
     assert np.allclose(ecef, np.array([0, 1, 0]))
 
 
 def test_ecef2enu_3():
     enu = np.array([0, 0, 1])
-    llh = np.array([0, -90, 0])
-    ecef = ecef2enu(enu, llh[0], llh[1], llh[2])
+    ecef = ecef2enu(enu, 0, -90)
     assert np.allclose(ecef, np.array([0, 1, 0]))
 
 
 def test_ecef2enu_4():
     enu = np.array([0, 0, 1])
-    llh = np.array([90, 0, 0])
-    ecef = ecef2enu(enu, llh[0], llh[1], llh[2])
+    ecef = ecef2enu(enu, 90, 0)
     assert np.allclose(ecef, np.array([0, 0, 1]))
 
 
 def test_ecef2enu_5():
     enu = np.array([0, 0, 1])
-    llh = np.array([-90, 0, 0])
-    ecef = ecef2enu(enu, llh[0], llh[1], llh[2])
+    ecef = ecef2enu(enu, -90, 0)
     assert np.allclose(ecef, np.array([0, 0, -1]))
 
 
 def test_ecef2enu_6():
     enu = np.array([0, 0, -1])
-    llh = np.array([0, -180, 0])
-    ecef = ecef2enu(enu, llh[0], llh[1], llh[2])
+    ecef = ecef2enu(enu, 0, -180)
     assert np.allclose(ecef, np.array([0, -1, 0]))
 
 
 def test_ecef2enu_7():
-    enu = np.array([0, 0, 1])
-    llh = np.array([0, -180, 1000])
-    ecef = ecef2enu(enu, llh[0], llh[1], llh[2])
-    assert np.allclose(ecef, np.array([0, 1, 0]))
+    enu = np.array([1, 1, 0])
+    ecef = ecef2enu(enu, 0, 0)
+    assert np.allclose(ecef, np.array([1, 0, 1]))
 
 
 def test_ecef2enu_8():
     enu = np.array([1, 1, 0])
-    llh = np.array([0, 0, 0])
-    ecef = ecef2enu(enu, llh[0], llh[1], llh[2])
-    assert np.allclose(ecef, np.array([1, 0, 1]))
-
-
-def test_ecef2enu_9():
-    enu = np.array([1, 1, 0])
-    llh = np.array([0, 180, 0])
-    ecef = ecef2enu(enu, llh[0], llh[1], llh[2])
+    ecef = ecef2enu(enu, 0, 180)
     assert np.allclose(ecef, np.array([-1, 0, -1]))

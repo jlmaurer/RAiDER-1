@@ -7,24 +7,22 @@
 #
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-import datetime
+from typing import List, Optional, Tuple, Union
+import datetime as dt
 import shelve
-
 import xml.etree.ElementTree as ET
 import numpy as np
-
 from abc import ABC
 from scipy.interpolate import interp1d
-# from numba import jit
 
-from RAiDER.utilFcns import (
-    cosd, sind, gdal_open, enu2ecef, lla2ecef, ecef2enu
-)
-
+from RAiDER.utilFcns import cosd, sind, gdal_open, enu2ecef, lla2ecef, ecef2enu
 from RAiDER.constants import _ZREF
 
-
 _SLANT_RANGE_THRESH = 5e6
+
+# t, x, y, z, vx, vy, vz - time, position, and velocity in ECEF of the sensor
+StateVectors = Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+LookVectors = Tuple[np.float64, np.float64]
 
 
 class LOS(ABC):
@@ -33,34 +31,23 @@ class LOS(ABC):
     def __init__(self):
         self._lats, self._lons, self._heights = None
 
-    def setPoints(self, lats, lons=None, heights=None):
+    def setPoints(self, lats: np.array, lons: np.array, heights: Optional[np.array]=None):
         '''Set the pixel locations'''
-        if (lats is None) and (self._lats is None):
+        if lats is None and self._lats is None:
             raise RuntimeError("You haven't set up any point locations yet")
 
-        # Will overwrite points by default
-        if lons is None:
-            llh = lats  # assume points are [lats lons heights]
-            self._lats = llh[..., 0]
-            self._lons = llh[..., 1]
-            self._heights = llh[..., 2]
-        elif heights is None:
-            self._lats = lats
-            self._lons = lons
-            self._heights = np.zeros((len(lats), 1))
-        else:
-            self._lats = lats
-            self._lons = lons
-            self._heights = heights
+        self._lats = lats
+        self._lons = lons
+        self._heights = heights or np.zeros((len(lats), 1))
 
 
 class Zenith(LOS):
     """Special value indicating a look vector of "zenith"."""
 
-    def __call__(self, lats=None, lons=None, heights=None):
+    def __call__(self, lats=None, lons=None, heights=None) -> np.ndarray:
         '''Set point locations and calculate Zenith look vectors'''
-        self.setPoint(lats, lons, heights)
-        return getZenithLookVecs(self._lats, self._lons, self._heights)
+        self.setPoints(lats, lons, heights)
+        return getZenithLookVecs(self._lats, self._lons)
 
 
 class Conventional(LOS):
@@ -69,11 +56,11 @@ class Conventional(LOS):
     be projected using the standard cos(inc) scaling.
     """
 
-    def __init__(self, los_filename):
+    def __init__(self, los_filename: str):
         '''read in and parse a line-of-sight file'''
         self._filename = los_filename
 
-    def __call__(self, lats=None, lons=None, heights=None, zref=_ZREF):
+    def __call__(self, lats=None, lons=None, heights=None, zref=_ZREF) -> np.ndarray:
         '''Read the LOS file and convert it to look vectors'''
         self.setPoints(lats, lons, heights)
         LOS_enu = inc_hd_to_enu(*gdal_open(self._filename))
@@ -87,7 +74,15 @@ class Conventional(LOS):
         )
 
 
-def getLookVectors(los_type, lats, lons, heights, zref=_ZREF, time=None, pad=3 * 3600):
+def getLookVectors(
+    los_type: Union[LOS, Tuple[LOS, str]],
+    lats: np.array,
+    lons: np.array,
+    heights: float,
+    zref: float=_ZREF,
+    time: Optional[dt.datetime]=None,
+    pad=3 * 3600
+) -> LookVectors:
     '''
     Get unit look vectors pointing from the ground (target) pixels to the sensor,
     or to Zenith. Can be accomplished using an ISCE-style 2-band LOS file or a
@@ -100,17 +95,17 @@ def getLookVectors(los_type, lats, lons, heights, zref=_ZREF, time=None, pad=3 *
 
     Parameters
     ----------
-    los_type: LookVector object or tuple  - Either a Zenith object or a tuple,
-                                             with the second element containing
-                                             the name of either a line-of-sight
-                                             file or orbital statevectors file
-    lats/lons/heights: ndarray             - WGS-84 coordinates of the target pixels
-    time: python datetime                  - user-requested query time. Must be
-                                             compatible with the orbit file passed.
-                                             Only required for a statevector file.
-    pad: int                               - integer number of seconds to pad around
-                                             the user-specified time; default 3 hours
-                                             Only required for a statevector file.
+    los_type: LOS or tuple          - Either a Zenith object or a tuple,
+                                      with the second element containing
+                                      the name of either a line-of-sight
+                                      file or orbital statevectors file
+    lats/lons/heights: ndarray      - WGS-84 coordinates of the target pixels
+    time: python datetime           - user-requested query time. Must be
+                                      compatible with the orbit file passed.
+                                      Only required for a statevector file.
+    pad: int                        - integer number of seconds to pad around
+                                      the user-specified time; default 3 hours
+                                      Only required for a statevector file.
 
     Returns
     -------
@@ -128,7 +123,7 @@ def getLookVectors(los_type, lats, lons, heights, zref=_ZREF, time=None, pad=3 *
     >>> getLookVectors(Zenith, np.array([0]), np.array([0]), np.array([0]))
     >>> # array([[1, 0, 0]])
     '''
-    if (los_type is None) or (los_type is Zenith):
+    if los_type is None or los_type is Zenith:
         los_type = Zenith
     else:
         los_type, los_file = los_type
@@ -136,8 +131,7 @@ def getLookVectors(los_type, lats, lons, heights, zref=_ZREF, time=None, pad=3 *
     if los_type is Zenith:
         look_vecs = Zenith(lats, lons, heights)
         lengths = zref - heights
-
-    elif (los_type is Conventional) or (los_type == 'los'):
+    elif los_type is Conventional or los_type == 'los':
         # If an LOS file is supplied, can only do the conventional approach
         c = Conventional(los_file)
         look_vecs = c(lats, lons, heights, zref=zref)
@@ -146,19 +140,12 @@ def getLookVectors(los_type, lats, lons, heights, zref=_ZREF, time=None, pad=3 *
         try:
             svs = np.stack(get_sv(los_file, time, pad), axis=-1)
             xyz_targets = np.stack(lla2ecef(lats, lons, heights), axis=-1)
-            look_vecs = state_to_los(
-                svs,
-                xyz_targets,
-            )
-            enu = ecef2enu(
-                look_vecs,
-                lats,
-                lons,
-                heights)
+            look_vecs = state_to_los(svs, xyz_targets)
+            enu = ecef2enu(look_vecs, lats, lons)
             lengths = (zref - heights) / enu[..., 2]
 
         # Otherwise, throw an error
-        except BaseException:
+        except:  # TODO: Which errors?
             raise ValueError(
                 'getLookVectors: I cannot parse the file {}'.format(los_file)
             )
@@ -170,13 +157,13 @@ def getLookVectors(los_type, lats, lons, heights, zref=_ZREF, time=None, pad=3 *
     return look_vecs.astype(np.float64), lengths
 
 
-def getZenithLookVecs(lats, lons, heights):
+def getZenithLookVecs(lats: np.array, lons: np.array) -> np.ndarray:
     '''
     Returns look vectors when Zenith is used.
 
     Parameters
     ----------
-    lats/lons/heights: ndarray  - Numpy arrays containing WGS-84 target locations
+    lats/lons: ndarray  - Numpy arrays containing WGS-84 target locations
 
     Returns
     -------
@@ -189,7 +176,7 @@ def getZenithLookVecs(lats, lons, heights):
     return np.stack([x, y, z], axis=-1)
 
 
-def get_sv(los_file, ref_time, pad=3 * 3600):
+def get_sv(los_file: str, ref_time: dt.datetime, pad=3 * 3600) -> List[np.ndarray]:
     """
     Read an LOS file and return orbital state vectors
 
@@ -254,7 +241,7 @@ def inc_hd_to_enu(incidence, heading):
 
 
 # @jit(nopython=True)
-def state_to_los(svs, xyz_targets):
+def state_to_los(svs: StateVectors, xyz_targets: np.ndarray) -> np.ndarray:
     '''
     Converts information from a state vector for a satellite orbit, given in terms of
     position and velocity, to line-of-sight information at each (lon,lat, height)
@@ -262,12 +249,14 @@ def state_to_los(svs, xyz_targets):
 
     Parameters
     ----------
-    svs            - t, x, y, z, vx, vy, vz - time, position, and velocity in ECEF of the sensor
-    xyz_targets    - lats, lons, heights - Ellipsoidal (WGS84) positions of target ground pixels
+    svs            - t, x, y, z, vx, vy, vz - time, position, and velocity in
+                     ECEF of the sensor
+    xyz_targets    - lats, lons, heights - Ellipsoidal (WGS84) positions of
+                     target ground pixels
 
     Returns
     -------
-    LOS 			- * x 3 matrix of LOS unit vectors in ECEF (*not* ENU)
+    LOS             - * x 3 matrix of LOS unit vectors in ECEF (*not* ENU)
 
     Example:
     >>> import datetime
@@ -275,7 +264,7 @@ def state_to_los(svs, xyz_targets):
     >>> from RAiDER.utilFcns import gdal_open
     >>> import RAiDER.losreader as losr
     >>> lats, lons, heights = np.array([-76.1]), np.array([36.83]), np.array([0])
-    >>> time = datetime.datetime(2018,11,12,23,0,0)
+    >>> time = dt.datetime(2018,11,12,23,0,0)
     >>> # download the orbit file beforehand
     >>> esa_orbit_file = 'S1A_OPER_AUX_POEORB_OPOD_20181203T120749_V20181112T225942_20181114T005942.EOF'
     >>> svs = losr.read_ESA_Orbit_file(esa_orbit_file, time)
@@ -292,13 +281,13 @@ def state_to_los(svs, xyz_targets):
     # Flatten the input array for convenience
     in_shape = xyz_targets.shape
     target_xyz = np.stack([xyz_targets[..., 0].flatten(), xyz_targets[..., 1].flatten(), xyz_targets[..., 2].flatten()], axis=-1)
-    Npts = len(target_xyz)
+    n_pts = len(target_xyz)
 
     # Iterate through targets and compute LOS
     slant_range = []
-    los = np.empty((Npts, 3), dtype=np.float64)
-    for k in range(Npts):
-        if ~any(np.isnan(target_xyz[k,:])):
+    los = np.empty((n_pts, 3), dtype=np.float64)
+    for k in range(n_pts):
+        if ~any(np.isnan(target_xyz[k, :])):
             los[k, :], sr = get_radar_coordinate(target_xyz[k, :], svs)
             slant_range.append(sr)
         else:
@@ -341,7 +330,7 @@ def cut_times(times, pad=3600 * 3):
     return np.abs(times) < pad
 
 
-def read_shelve(filename):
+def read_shelve(filename: str) -> StateVectors:
     # TODO: docstring and unit tests
     with shelve.open(filename, 'r') as db:
         obj = db['frame']
@@ -370,7 +359,7 @@ def read_shelve(filename):
     return t, x, y, z, vx, vy, vz
 
 
-def read_txt_file(filename):
+def read_txt_file(filename: str) -> StateVectors:
     '''
     Read a 7-column text file containing orbit statevectors. Time
     should be denoted as integer time in seconds since the reference
@@ -384,8 +373,7 @@ def read_txt_file(filename):
                      - x / y / z locations in ECEF cartesian coordinates
                      - vx / vy / vz velocities in m/s in ECEF coordinates
     Returns
-    svs: list      - a length-7 list of numpy vectors containing the above
-                     variables
+    svs: tuple     - a tuple of 7 numpy vectors containing the above variables
     '''
     t = list()
     x = list()
@@ -414,10 +402,10 @@ def read_txt_file(filename):
     if len(t) < 4:
         raise ValueError('read_txt_file: File {} does not have enough statevectors'.format(filename))
 
-    return [np.array(a) for a in [t, x, y, z, vx, vy, vz]]
+    return tuple([np.array(a) for a in [t, x, y, z, vx, vy, vz]])
 
 
-def read_ESA_Orbit_file(filename, ref_time):
+def read_ESA_Orbit_file(filename: str, ref_time: dt.datetime) -> StateVectors:
     '''
     Read orbit data from an orbit file supplied by ESA
 
@@ -449,7 +437,7 @@ def read_ESA_Orbit_file(filename, ref_time):
 
     for i, st in enumerate(data_block[0]):
         t[i] = (
-            datetime.datetime.strptime(
+            dt.datetime.strptime(
                 st[1].text,
                 'UTC=%Y-%m-%dT%H:%M:%S.%f'
             ) - ref_time
@@ -462,7 +450,7 @@ def read_ESA_Orbit_file(filename, ref_time):
         vy[i] = float(st[8].text)
         vz[i] = float(st[9].text)
 
-    return [t, x, y, z, vx, vy, vz]
+    return t, x, y, z, vx, vy, vz
 
 
 # @jit(nopython=True)
