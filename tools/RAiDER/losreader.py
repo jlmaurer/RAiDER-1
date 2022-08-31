@@ -14,6 +14,7 @@ import xml.etree.ElementTree as ET
 import numpy as np
 from abc import ABC
 from scipy.interpolate import interp1d
+import isce3
 
 from RAiDER.utilFcns import cosd, sind, gdal_open, enu2ecef, lla2ecef, ecef2enu
 from RAiDER.constants import _ZREF
@@ -138,9 +139,65 @@ def getLookVectors(
 
     else:
         try:
+            # look_vecs = state_to_los(svs, xyz_targets)
+
+            # isce3.geometry.geo2rdr_point()
+            # ---
+            # Arguments:
+            # lat_lon_height  Lon/Lat/Hae of target of interest - list length 3
+            # ellipsoid       Ellipsoid object
+            # orbit           Orbit object
+            # doppler         Poly2D Doppler model
+            # wavelength      Radar wavelength - float
+            # side            string "left" or "right"
+            # threshold       azimuth time convergence threshold in seconds
+            #                 - float, default 0.05
+            # maxiter         Maximum number of Newton-Raphson iterations
+            #                 - int, default 50
+            # delta_range     step size used for computing derivative of doppler
+            #                 - float, default 1e-8
+            #
+            # Returns:
+            # aztime       azimuth time of input Lon/Lat/Hae w.r.t reference
+            #              epoch of the orbit - float
+            # slant_range  slant range to input Lon/Lat/Hae - float
+
+            # isce3.core.ellipsoid.Ellipsoid() Constructor
+            # maj  Semi-major of axis in meters - float
+            # ecc  Square of ellipsoid eccentricity (unitless) - float
+
+            # isce3.core.poly2d.Poly2D() Constructor
+            # xo x/Range Order - int
+            # yo y/Azimuth Order - int
+            # xm x/Range Mean - float
+            # ym y/Azimuth Mean - float
+            # xn x/Range Normal - float
+            # yn y/Azimuth Normal - float
+
             svs = np.stack(get_sv(los_file, time, pad), axis=-1)
-            xyz_targets = np.stack(lla2ecef(lats, lons, heights), axis=-1)
-            look_vecs = state_to_los(svs, xyz_targets)
+            lat_lon_height = np.stack(lla2ecef(lats, lons, heights), axis=-1)
+
+            # TODO: Replace guessed values with real ones
+            ellipsoid = isce3.core.ellipsoid.Ellipsoid(
+                maj=6378137.0,  # Made up by Copilot
+                ecc=0.00669437999014  # Made up by Copilot
+            )
+            orbit = isce3.core.orbit.Orbit(svs)
+            doppler = isce3.core.poly2d.Poly2D(
+                xo=1, yo=1,  # Copilot-generated
+                xm=0, ym=0,
+                xn=0, yn=0
+            )
+            aztime, slant_range = isce3.geometry.geo2rdr_point(
+                lat_lon_height=lat_lon_height,
+                ellipsoid=ellipsoid,
+                orbit=orbit,
+                doppler=doppler,
+                wavelength=0.05,  # Copilot made up this number
+                side="left",  # Guessed
+            )
+            # look_vecs = ecef2enu(slant_range, 0, 0, lats, lons, heights)
+            # lengths = zref - heights
             enu = ecef2enu(look_vecs, lats, lons)
             lengths = (zref - heights) / enu[..., 2]
 

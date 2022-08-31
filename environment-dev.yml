@@ -23,6 +23,7 @@ dependencies:
  - gdal>=3.0
  - geopandas
  - h5py
+ - isce3
  - libgdal
  - matplotlib
  - numpy
