@@ -14,11 +14,16 @@ import xarray
 from netCDF4 import Dataset
 import numpy as np
 from pyproj import CRS, Transformer
-from scipy.interpolate import RegularGridInterpolator
+from scipy.interpolate import RegularGridInterpolator as rgi
 
 from RAiDER.constants import _STEP
-from RAiDER.interpolator import RegularGridInterpolator as Interpolator
-from RAiDER.makePoints import makePoints1D
+
+
+#TODO: Need to replace makePoints1D for new raytracing scheme 
+# from RAiDER.makePoints import makePoints1D
+# Define a dummy function as a placeholder for now
+def makePoints1D(max_len, sp, slv, stepSize):
+    raise NotImplementedError
 
 
 def calculate_start_points(x, y, z, ds):
@@ -107,22 +112,10 @@ def getInterpolators(wm_file, kind='pointwise'):
             wet = np.array(f.variables['wet_total'][:]).transpose(1, 2, 0)
             hydro = np.array(f.variables['hydro_total'][:]).transpose(1, 2, 0)
 
-    ifWet = Interpolator((ys_wm, xs_wm, zs_wm), wet, fill_value=np.nan)
-    ifHydro = Interpolator((ys_wm, xs_wm, zs_wm), hydro, fill_value=np.nan)
+    ifWet = rgi((ys_wm, xs_wm, zs_wm), wet, fill_value=np.nan)
+    ifHydro = rgi((ys_wm, xs_wm, zs_wm), hydro, fill_value=np.nan)
 
     return ifWet, ifHydro
-
-
-def make_interpolator(xs, ys, zs, data):
-    '''
-    Function to create and return an Interpolator object
-    '''
-    return RegularGridInterpolator(
-        (ys.ravel(), xs.ravel(), zs.ravel()),
-        data,
-        bounds_error=False,
-        fill_value=np.nan
-    )
 
 
 def chunk(chunkSize, in_shape):
