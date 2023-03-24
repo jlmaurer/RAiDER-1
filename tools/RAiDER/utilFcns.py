@@ -30,7 +30,17 @@ pbar = None
 
 
 def projectDelays(delay, inc):
-    '''Project zenith delays to LOS'''
+    '''
+    Project zenith delays to LOS
+
+    Args: 
+        delay (float)   - ndarray of delay values
+        inc (float)     - incidence angle in degrees
+    
+    
+    Returns:
+        ndarray of delays projected to slant
+    '''
     return delay / cosd(inc)
 
 
