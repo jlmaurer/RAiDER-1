@@ -123,168 +123,68 @@ class ECMWF(WeatherModel):
         self._zs = np.flip(h, axis=2)
 
 
-    def _fetch(self, out):
+    def _fetch(self, out, format='netcdf'):
         '''
         Fetch a weather model from ECMWF
         '''
-        # bounding box plus a buffer
+        # Note that the order will be different for the APIs
         lat_min, lat_max, lon_min, lon_max = self._ll_bounds
 
         # execute the search at ECMWF
-        self._get_from_ecmwf(
-            lat_min,
-            lat_max,
-            self._lat_res,
-            lon_min,
-            lon_max,
-            self._lon_res,
-            self._time,
-            out
-        )
+        self._get_from_cds(lat_min,lat_max,lon_min,lon_max,self._time,out,format=format)
         return
 
 
-    def _get_from_ecmwf(self, lat_min, lat_max, lat_step, lon_min, lon_max,
-                        lon_step, time, out):
-        import ecmwfapi
-
-        server = ecmwfapi.ECMWFDataServer()
-
-        corrected_DT = util.round_date(time, datetime.timedelta(hours=self._time_res))
-        if not corrected_DT == time:
-            logger.warning('Rounded given datetime from  %s to %s', time, corrected_DT)
-
-        server.retrieve({
-            "class": self._classname,  # ERA-Interim
-            'dataset': self._dataset,
-            "expver": "{}".format(self._expver),
-            # They warn me against all, but it works well
-            "levelist": 'all',
-            "levtype": "ml",  # Model levels
-            "param": "lnsp/q/z/t",  # Necessary variables
-            "stream": "oper",
-            # date: Specify a single date as "2015-08-01" or a period as
-            # "2015-08-01/to/2015-08-31".
-            "date": datetime.datetime.strftime(corrected_DT, "%Y-%m-%d"),
-            # type: Use an (analysis) unless you have a particular reason to
-            # use fc (forecast).
-            "type": "an",
-            # time: With type=an, time can be any of
-            # "00:00:00/06:00:00/12:00:00/18:00:00".  With type=fc, time can
-            # be any of "00:00:00/12:00:00",
-            "time": datetime.time.strftime(corrected_DT.time(), "%H:%M:%S"),
-            # step: With type=an, step is always "0". With type=fc, step can
-            # be any of "3/6/9/12".
-            "step": "0",
-            # grid: Only regular lat/lon grids are supported.
-            "grid": '{}/{}'.format(lat_step, lon_step),
-            "area": '{}/{}/{}/{}'.format(lat_max, lon_min, lat_min, lon_max),  # area: N/W/S/E
-            "format": "netcdf",
-            "resol": "av",
-            "target": out,    # target: the name of the output file.
-        })
-
-
     def _get_from_cds(
-        self,
-        lat_min,
-        lat_max,
-        lon_min,
-        lon_max,
-        acqTime,
-        outname
-    ):
+            self,
+            lat_min,lat_max,lon_min,lon_max,
+            acqTime,
+            outname,
+            format="netcdf"
+        ):
         """ Used for ERA5 """
-        import cdsapi
-        c = cdsapi.Client(verify=0)
-
-        if self._model_level_type == 'pl':
-            var = ['z', 'q', 't']
-            levType = 'pressure_level'
-        else:
-            var = "129/130/133/152"  # 'lnsp', 'q', 'z', 't'
-            levType = 'model_level'
-
         bbox = [lat_max, lon_min, lat_min, lon_max]
 
         # round to the closest legal time
-
         corrected_DT = util.round_date(acqTime, datetime.timedelta(hours=self._time_res))
         if not corrected_DT == acqTime:
             logger.warning('Rounded given datetime from  %s to %s', acqTime, corrected_DT)
 
-
-        # I referenced https://confluence.ecmwf.int/display/CKB/How+to+download+ERA5
-        dataDict = {
-            "class": "ea",
-            "expver": "1",
-            "levelist": 'all',
-            "levtype": "{}".format(self._model_level_type),  # 'ml' for model levels or 'pl' for pressure levels
-            'param': var,
-            "stream": "oper",
-            "type": "an",
-            "date": "{}".format(corrected_DT.strftime('%Y-%m-%d')),
-            "time": "{}".format(datetime.time.strftime(corrected_DT.time(), '%H:%M')),
-            # step: With type=an, step is always "0". With type=fc, step can
-            # be any of "3/6/9/12".
-            "step": "0",
-            "area": bbox,
-            "grid": [0.25, .25],
-            "format": "netcdf"}
-
-        try:
-            c.retrieve('reanalysis-era5-complete', dataDict, outname)
-        except Exception as e:
-            raise Exception
+        download_using_cds(bbox, corrected_DT, outname, self._model_level_type, format=format)
 
 
-    def _download_ecmwf(self, lat_min, lat_max, lat_step, lon_min, lon_max, lon_step, time, out):
+    def _download_ecmwf(self, lat_min, lat_max, lat_step, lon_min, lon_max, lon_step, time, out, format="netcdf"):
         """ Used for HRES """
-        from ecmwfapi import ECMWFService
-
-        server = ECMWFService("mars")
-
+        bbox = [lat_max, util.floorish(lon_min, 0.1), util.floorish(lat_min, 0.1), lon_max]
+        grid_step = [lon_step, lat_step]
+        
         # round to the closest legal time
         corrected_DT = util.round_date(time, datetime.timedelta(hours=self._time_res))
         if not corrected_DT == time:
             logger.warning('Rounded given datetime from  %s to %s', time, corrected_DT)
 
-        if self._model_level_type == 'ml':
-            param = "129/130/133/152"
-        else:
-            param = "129.128/130.128/133.128/152"
-
-        server.execute(
-            {
-                'class': self._classname,
-                'dataset': self._dataset,
-                'expver': "{}".format(self._expver),
-                'resol': "av",
-                'stream': "oper",
-                'type': "an",
-                'levelist': "all",
-                'levtype': "{}".format(self._model_level_type),
-                'param': param,
-                'date': datetime.datetime.strftime(corrected_DT, "%Y-%m-%d"),
-                'time': "{}".format(datetime.time.strftime(corrected_DT.time(), '%H:%M')),
-                'step': "0",
-                'grid': "{}/{}".format(lon_step, lat_step),
-                'area': "{}/{}/{}/{}".format(lat_max, util.floorish(lon_min, 0.1), util.floorish(lat_min, 0.1), lon_max),
-                'format': "netcdf",
-            },
-            out
+        download_using_ecmwfapi(
+            bbox, corrected_DT, grid_step, out, 
+            self._classname, 
+            self._dataset, 
+            self._expver, 
+            self._model_level_type, 
+            format=format
         )
 
 
     def _load_pressure_level(self, filename, *args, **kwargs):
-        with xr.open_dataset(filename) as block:
-            # Pull the data
-            z = np.squeeze(block['z'].values)
-            t = np.squeeze(block['t'].values)
-            q = np.squeeze(block['q'].values)
-            lats = np.squeeze(block.latitude.values)
-            lons = np.squeeze(block.longitude.values)
-            levels = np.squeeze(block.level.values) * 100
+        try:
+            with xr.open_dataset(filename) as block:
+                # Pull the data
+                z = np.squeeze(block['z'].values)
+                t = np.squeeze(block['t'].values)
+                q = np.squeeze(block['q'].values)
+                lats = np.squeeze(block.latitude.values)
+                lons = np.squeeze(block.longitude.values)
+                levels = np.squeeze(block.level.values) * 100
+        except Exception as e:
+            lats, lons, t, q, z, levels = grib_reader_ecmwf(filename)
 
         z = np.flip(z, axis=1)
 
@@ -363,3 +263,107 @@ class ECMWF(WeatherModel):
                                'you may have a problem with your mask')
 
         return lats, lons, xs, ys, t, q, lnsp, z
+
+
+def grib_reader_ecmwf(filename, level_type='ml'):
+    '''
+    Read a grib file from ECMWF and pull the data for use with RAiDER
+    '''
+    # open the dataset and pull the data
+    with xr.open_dataset(filename, engine='pynio') as ds:
+        if level_type=='ml':
+            t = ds['TMP_P0_L105_GLL0'].values.copy()
+            z = ds['GP_P0_L105_GLL0'].values.copy()
+            q = ds['SPFH_P0_L105_GLL0'].values.copy()
+            lnsp = ds['NLPRES_P0_L105_GLL0'].values.copy()
+            pl = ds.lv_HYBL0.values.copy()
+        elif level_type=='pl':
+            pass
+        else:
+            raise ValueError('grib_reader_ecmwf: level_type "{}" is not recognized'.format(level_type))
+
+        lats = ds.lat_0.values.copy()
+        lons = ds.lon_0.values.copy()
+
+    return np.broadcast_to(lats, z.T.shape).T, np.broadcast_to(lons, z.shape), np.moveaxis(t, 0,2), np.moveaxis(q,0,2), z, lnsp, pl
+
+
+def download_using_cds(bbox, corrected_DT, outname, model_level_type='ml', format='netcdf'):
+    '''
+    Download data from the ECMWF CDSAPI
+    '''
+    import cdsapi
+    c = cdsapi.Client(verify=0)
+
+    if model_level_type == 'pl':
+        var = ['z', 'q', 't']
+        levType = 'pressure_level'
+    else:
+        var = "129/130/133/152"  # 'lnsp', 'q', 'z', 't'
+        levType = 'model_level'
+
+    # I referenced https://confluence.ecmwf.int/display/CKB/How+to+download+ERA5
+    dataDict = {
+        "class": "ea",
+        "expver": "1",
+        "levelist": 'all',
+        "levtype": "{}".format(model_level_type),  # 'ml' for model levels or 'pl' for pressure levels
+        'param': var,
+        "stream": "oper",
+        "type": "an",
+        "date": "{}".format(corrected_DT.strftime('%Y-%m-%d')),
+        "time": "{}".format(datetime.time.strftime(corrected_DT.time(), '%H:%M')),
+        # step: With type=an, step is always "0". With type=fc, step can
+        # be any of "3/6/9/12".
+        "step": "0",
+        "area": bbox,
+        "grid": [0.25, .25],
+        "format": "{}".format(format)}
+
+    try:
+        c.retrieve('reanalysis-era5-complete', dataDict, outname)
+    except Exception as e:
+        raise Exception
+
+
+def download_using_ecmwfapi(
+        bbox, corrected_DT, grid_step, outname, 
+        classname='od', 
+        dataset='hres', 
+        version="1", 
+        model_level_type='ml', 
+        format='netcdf'
+    ):
+    '''
+    Download data from the ECMWF API (needed for ECWMF-HRES)
+    '''
+    from ecmwfapi import ECMWFService
+    server = ECMWFService("mars")
+
+    lon_step, lat_step = grid_step
+
+    if model_level_type == 'ml':
+        param = "129/130/133/152"
+    else:
+        param = "129.128/130.128/133.128/152"
+
+    server.execute(
+        {
+            'class': classname,
+            'dataset': dataset,
+            'expver': version,
+            'resol': "av",
+            'stream': "oper",
+            'type': "an",
+            'levelist': "all",
+            'levtype': "{}".format(model_level_type),
+            'param': param,
+            'date': datetime.datetime.strftime(corrected_DT, "%Y-%m-%d"),
+            'time': "{}".format(datetime.time.strftime(corrected_DT.time(), '%H:%M')),
+            'step': "0",
+            'grid': "{}/{}".format(lon_step, lat_step),
+            'area': "{}/{}/{}/{}".format(bbox),
+            'format': "{}".format(format),
+        },
+        outname
+    )
