@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [PEP 440](https://www.python.org/dev/peps/pep-0440/)
 and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+### Fixed
+* [TBD](https://github.com/dbekaert/RAiDER/pull/TBD) - Convert GNSS station heights from the WGS84 ellipsoid to the EGM96 geoid before sampling the weather model cube, removing a ~5-9 mm positive ZTD bias in CONUS. The height datum of a station file is declared with the new `station_file_crs` option (`4326`, the default, for geoid/MSL heights; `4979` for ellipsoidal heights such as UNR/IGS20 station lists).
+
 ## [0.6.0]
 ### Removed
 * [764](https://github.com/dbekaert/RAiDER/pull/764) - Removed Python 3.8 support. Python 3.9 is now the minimum version officially required to run RAiDER.
